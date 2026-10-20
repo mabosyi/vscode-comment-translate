@@ -15,12 +15,13 @@ interface IGetToken {
 }
 
 // ponytail: 'gtx' and 'at' are unofficial client values of the translate_a/single endpoint, and Google may throttle or block either at any time.
-// Google throttles each client value separately, and which one is throttled changes over time.
-// Measured 2026-10-20: gtx 0/10 OK and at 10/10 OK (earlier), then gtx 6/6 OK and at 0/6 OK, interleaved (later).
+// Throttling is per client at times, but both clients were also throttled together (2026-10-20: 4 requests, each at:429 then gtx:429 or the reverse, ~1 s each).
+// Measured 2026-10-20 earlier: gtx 0/10 OK and at 10/10 OK; later, interleaved: gtx 6/6 OK and at 0/6 OK.
+// Rotation only helps while one bucket is free; otherwise it fails faster (~1 s instead of ~4.5 s with got's retries).
 // Both return the same res[0] shape, so the parser is unchanged. On HTTP 429 we rotate to the next client once per request.
 // Upgrade path: add more client values here, or a setting.
 const GOOGLE_CLIENTS = ['gtx', 'at'];
-// Index of the client that last answered; the next call starts there.
+// Index of the client that last answered. Written only on success, so concurrent failures cannot move it.
 let googleClientIndex = 0;
 
 export class GoogleTranslate extends BaseTranslate {
@@ -34,9 +35,11 @@ export class GoogleTranslate extends BaseTranslate {
             baseUrl = mirror + '/translate_a/single';
         }
         let res: any;
+        // Per-request index: parallel chunks must not move the shared index while another one is retrying.
+        let client = googleClientIndex;
         for (let attempt = 1; ; attempt++) {
             let data: any = {
-                client: GOOGLE_CLIENTS[googleClientIndex],
+                client: GOOGLE_CLIENTS[client],
                 sl: from,
                 tl: to,
                 hl: to,
@@ -58,13 +61,14 @@ export class GoogleTranslate extends BaseTranslate {
                         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36'
                     }
                 }).json();
+                googleClientIndex = client;
                 break;
             } catch (e: any) {
                 // Rotate only on 429 and only while another client is left; anything else is rethrown.
                 if (e?.response?.statusCode !== 429 || attempt >= GOOGLE_CLIENTS.length) {
                     throw e;
                 }
-                googleClientIndex = (googleClientIndex + 1) % GOOGLE_CLIENTS.length;
+                client = (client + 1) % GOOGLE_CLIENTS.length;
             }
         }
 
