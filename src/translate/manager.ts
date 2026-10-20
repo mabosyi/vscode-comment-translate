@@ -26,9 +26,11 @@ let persistedCacheStorage: Memento | undefined;
 /**
  * Drop every cached translation: the in-memory session cache and the results that
  * TranslateManager persisted in workspaceState. Other workspaceState keys are left alone.
+ * The "Clear Translation Cache" command also rebuilds browse mode afterwards
+ * (command/command.ts); already-open Markdown previews keep their text until reopened.
  * ponytail: a request already in flight still writes its result after this returns, and
- * the separate cache of concise mode (languageFeature/concise.ts) is not cleared. Track
- * and cancel pendingTranslateTasks if that ever matters.
+ * the separate cache of concise mode (languageFeature/concise.ts) is never cleared, so only a
+ * window reload refreshes it. Track and cancel pendingTranslateTasks if that ever matters.
  * @returns Number of persisted entries removed
  */
 export async function clearTranslationCache(): Promise<number> {

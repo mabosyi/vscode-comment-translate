@@ -5,10 +5,13 @@ import { nameVariableCommand, replaceRange, replaceSelections } from "./replaceS
 import { addSelection, clipboard, selectLastHover } from "./select";
 import { selectLanguageModel, setDeepLApiKey } from "./sourceSetup";
 import { clearTranslationCache } from "../translate/manager";
+import { commentDecorationManager } from "../languageFeature/decoration";
 
 async function clearTranslationCacheCommand() {
     const count = await clearTranslationCache();
-    window.showInformationMessage(`Cleared ${count} cached translations. Reopen open previews to refresh them.`);
+    // Browse mode reuses decorations for unchanged ranges, so rebuild them to drop the old text.
+    commentDecorationManager.resetCommentDecoration();
+    window.showInformationMessage(`Cleared ${count} cached translations. Reopen open Markdown previews to refresh them.`);
 }
 
 export function registerCommands(context: ExtensionContext) {
