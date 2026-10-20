@@ -1,0 +1,3 @@
+# Fixtures are compared against LF template literals in tests; keep them LF
+# even on Windows checkouts with core.autocrlf=true.
+test/fixtures/** text eol=lf
