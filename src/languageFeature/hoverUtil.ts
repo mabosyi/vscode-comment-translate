@@ -1,6 +1,15 @@
 import { MarkdownString, Range } from "vscode";
 import { getConfig } from "../configuration";
 
+/**
+ * Picks the hover contents to show: the toolbar header followed by the translation,
+ * or the translation alone when the toolbar is hidden (`hover.showToolbar` is false).
+ * Generic so it stays free of vscode types.
+ */
+export function hoverContents<T>(header: T, md: T, showToolbar: boolean): T[] {
+    return showToolbar ? [header, md] : [md];
+}
+
 export function createHoverMarkdownString(
     translatedText: string,
     humanizeText: string | undefined,

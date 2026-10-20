@@ -807,6 +807,12 @@
                         "order": 25,
                         "description": "Show hover overlay near cursor."
                     },
+                    "commentTranslate.hover.showToolbar": {
+                        "type": "boolean",
+                        "default": true,
+                        "order": 26,
+                        "description": "%commentTranslate.configuration.hoverShowToolbar%"
+                    },
                     "commentTranslate.hover.string": {
                         "type": "boolean",
                         "default": false,

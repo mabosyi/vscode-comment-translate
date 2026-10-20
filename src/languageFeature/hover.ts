@@ -17,7 +17,7 @@ import { compileBlock } from "../syntax/compile";
 import { compileMarkdown, getMarkdownTextValue } from "../syntax/marked";
 import { ICommentBlock } from "../interface";
 import { createComment } from "../syntax/Comment";
-import { createHoverMarkdownString } from "./hoverUtil";
+import { createHoverMarkdownString, hoverContents } from "./hoverUtil";
 
 // export let shortLive = new ShortLive<string>((prev, curr) => prev === curr);
 let last: Map<string, Range> = new Map();
@@ -101,7 +101,10 @@ async function commentProvideHover(
         showRange = range.intersection(nearRange) || showRange;
     }
 
-    const hover = new Hover([res.header, res.md], showRange);
+    const hover = new Hover(
+        hoverContents(res.header, res.md, getConfig<boolean>("hover.showToolbar", true)),
+        showRange
+    );
     last.set(uri, range);
     return hover;
 }

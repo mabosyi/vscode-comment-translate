@@ -72,6 +72,7 @@ Third-party translation services can be found by searching for `@tag:translateSo
 * `commentTranslate.hover.concise`: Enable/disable concise mode. Only triggers hover translation when pressing ctrl or command
 * `commentTranslate.hover.string`: Enable/disable string hover translation
 * `commentTranslate.hover.content`: Enable/disable translation of hover content
+* `commentTranslate.hover.showToolbar`: Show/hide the toolbar (replace, merge lines, change source) at the top of translation hovers; the translation itself stays visible
 * `commentTranslate.multilineMerge`: Merge multiline comments
 * `commentTranslate.targetLanguage`: Translation target language, uses the local VSCode language if not set (quickly set through status)
 * `commentTranslate.source`: Translation service source configuration. It is recommended to set it through commands. Supports plugin extensions for translation service sources. [example](https://github.com/intellism/deepl-translate)

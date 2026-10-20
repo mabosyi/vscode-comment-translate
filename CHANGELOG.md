@@ -8,6 +8,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 * The `Copilot` source now works with any vscode.lm chat model (`Comment Translate: Select Language Model`).
 * `commentTranslate.fallbackSources`: ordered fallback across built-in sources.
 * `Comment Translate: Clear Translation Cache` command: removes the saved translations (including results left by a fallback source or an earlier language model) so the next request translates again.
+* `commentTranslate.hover.showToolbar` (default `true`): set to `false` to hide the Comment Translate toolbar (replace, merge lines, add selection, change source) at the top of translation hovers; the translation stays visible.
 
 ### Fixed
 * Bing source: bump `bing-translate-api` to 4.3.0 (2.10.0 failed every request with 401).

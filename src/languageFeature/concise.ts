@@ -11,7 +11,7 @@ import { ICommentBlock } from "../interface";
 import { debounce } from "../util/short-live";
 import { createComment } from "../syntax/Comment";
 import { compileBlock } from "../syntax/compile";
-import { createHoverMarkdownString } from "./hoverUtil";
+import { createHoverMarkdownString, hoverContents } from "./hoverUtil";
 import { DecorationOptions } from "vscode";
 
 class ConciseDecorationManager {
@@ -43,6 +43,11 @@ class ConciseDecorationManager {
             this.update();
         }, null, this.disposables);
 
+        // The toolbar is baked into the decoration hover, so rebuild it when the setting flips.
+        onConfigChange('hover.showToolbar', () => {
+            this.update();
+        }, null, this.disposables);
+
         workspace.onDidChangeTextDocument(debounce(() => this.update()), null, this.disposables);
 
         this.update();
@@ -59,6 +64,7 @@ class ConciseDecorationManager {
         }
 
         const blocks = await this.getVisibleComments(editor);
+        const showToolbar = getConfig<boolean>("hover.showToolbar", true);
 
         const decorationTasks = blocks.map(async block => {
             // Target the first 2 characters of the block for the underline
@@ -96,7 +102,7 @@ class ConciseDecorationManager {
 
             return {
                 range: decorationRange,
-                hoverMessage: [hoverContent.header, hoverContent.md]
+                hoverMessage: hoverContents(hoverContent.header, hoverContent.md, showToolbar)
             } as DecorationOptions;
         });
 

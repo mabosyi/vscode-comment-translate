@@ -25,6 +25,7 @@
     "commentTranslate.configuration.browseMode": "Comment browse mode",
     "commentTranslate.configuration.markdownScopeFallback": "When parsing Markdown code blocks, use TextMate scope matching as a fallback after fenced-code detection.",
     "commentTranslate.configuration.openHover": "Open hover translation",
+    "commentTranslate.configuration.hoverShowToolbar": "Show the Comment Translate toolbar (replace, merge lines, change source) at the top of translation hovers.",
     "commentTranslate.configuration.stringHover": "Hover translation string",
     "commentTranslate.configuration.variableHover": "Hover translation variable",
     "commentTranslate.configuration.selectTargetLanguageWhenReplacing": "Select TargetLanguage when replacing",
