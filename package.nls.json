@@ -20,7 +20,7 @@
     "commentTranslate.configuration.contentHover": "Translate Hover Content",
     "commentTranslate.configuration.targetLanguage": "Translation to target language",
     "commentTranslate.configuration.sourceLanguage": "Translation to source language",
-    "commentTranslate.configuration.source": "Translate servcie source. Google, Bing, Baidu have been built-in.",
+    "commentTranslate.configuration.source": "Translate service source. Built-in sources: Google, Bing, DeepL, Copilot (VS Code language models), TranSmart. Use the \"Change translate source\" command to pick one, including sources provided by other extensions.",
     "commentTranslate.configuration.browseEnabled": "Enable comment browse translation",
     "commentTranslate.configuration.browseMode": "Comment browse mode",
     "commentTranslate.configuration.markdownScopeFallback": "When parsing Markdown code blocks, use TextMate scope matching as a fallback after fenced-code detection.",

@@ -16,7 +16,7 @@ Fork pribadi dari `intellism/vscode-comment-translate` (remote `upstream`), orig
 | Debug | F5 "Launch Extension" (`.vscode/launch.json`) |
 | Engine | VS Code `^1.92.0`, activation `onStartupFinished`, entry `dist/extension.js` |
 
-Baseline 2026-10-20 (fresh clone, Windows): `tsc` bersih; webpack OK (1 warning `keyv` dynamic require, benign); eslint 1 error `no-control-regex` di `src/syntax/isCode.ts:35`; jest **1 fail** `commentParse.test.ts` "【typescript】" — bukan bug kode, tapi fixture ter-checkout CRLF (`core.autocrlf=true`, repo tanpa `.gitattributes`) sementara expected template-literal LF.
+Baseline 2026-10-20 (fresh clone, Windows): `tsc` bersih; webpack OK (1 warning `keyv` dynamic require, benign); eslint 1 error `no-control-regex` di `src/syntax/isCode.ts:35`; jest **1 fail** `commentParse.test.ts` "【typescript】" — bukan bug kode, tapi fixture ter-checkout CRLF (`core.autocrlf=true`, repo tanpa `.gitattributes`) sementara expected template-literal LF. Branch `fix/translate-source-reliability` menambah `.gitattributes` (`test/fixtures/** text eol=lf`), sehingga suite jest penuh hijau (1 test skipped).
 
 ## Peta arsitektur
 
@@ -26,9 +26,12 @@ activate() src/extension.ts
  ├─ initTranslate()          translate/manager.ts
  │    ├─ TranslateManager    (npm comment-translate-manager@0.0.5; cache workspaceState, chunk by ITranslate.maxLen)
  │    └─ TranslateExtensionProvider translate/translateExtension.ts
- │         built-in: Google | Bing | Copilot | TranSmart ; eksternal: contributes.translates + exports.extendTranslate
+ │         built-in: Google | Bing | DeepL | Copilot (= LanguageModelTranslate di atas vscode.lm) | TranSmart
+ │         eksternal: contributes.translates + exports.extendTranslate
+ │         applySources(primary, fallbacks): 1 id atau ada id non-built-in → switchTranslate(ids[0]);
+ │           semua built-in → FallbackTranslate terdaftar dengan key `chain:A>B>C` (coba anggota berurutan)
  ├─ createComment()          syntax/Comment.ts → TextMateService (vscode-textmate + oniguruma wasm) → CommentParse
- ├─ registerCommands()       command/command.ts (21 command → command/*.ts)
+ ├─ registerCommands()       command/command.ts (23 command → command/*.ts)
  ├─ registerHover()          languageFeature/hover.ts ('*' HoverProvider: komentar/seleksi + hover.content + diagnostics)
  ├─ registerCompletion()     languageFeature/completion.ts (nameVariable → change-case)
  ├─ registerChatParticipant() copilot/translate.ts (@translate, /word, /var; vscode.lm gpt-4o)
@@ -37,7 +40,7 @@ activate() src/extension.ts
  └─ commentDecorationManager languageFeature/decoration.ts (browse/immersive: contrast|inplace; markdown/rst/plaintext via blockParser.ts)
 ```
 
-Jalur terjemahan: `compile.ts:compileBlock` → `manager.ts:autoMutualTranslate` (cld3 detect bila `mutualTranslate`) → `cachedTranslate` (session Map ≤1000 + dedupe in-flight) → `TranslateManager.translate` (workspaceState cache → `splitText` → `ITranslate.translate`).
+Jalur terjemahan: `compile.ts:compileBlock` → `manager.ts:autoMutualTranslate` (cld3 detect bila `mutualTranslate`) → `cachedTranslate` (session Map ≤1000 + dedupe in-flight) → `TranslateManager.translate` (workspaceState cache → `splitText` → `ITranslate.translate`; dengan `fallbackSources` terisi, `ITranslate` itu adalah `FallbackTranslate` yang mencoba anggotanya berurutan sampai ada hasil non-kosong).
 
 Subsistem & file inti:
 
@@ -46,11 +49,23 @@ Subsistem & file inti:
 | Syntax/TextMate | `syntax/TextMateService.ts`, `CommentParse.ts`, `Comment.ts`, `compile.ts`, `isCode.ts` | Grammar dari `extensions.all`; `resources/<lang>/` hanya dipakai saat `env.remoteName` (remote). `isCode.ts` = heuristik skor token, bukan flourite. |
 | Markdown | `syntax/markdownDocument.ts` (1023 baris, parser line-oriented murni), `languageFeature/markdownPreview.ts`, `translatedMarkdownFs.ts` | Preview progresif batch 5, debounce 500 ms. Browse-mode markdown ada di `decoration.ts`, bukan di sini. |
 | Hover/Browse | `languageFeature/hover.ts`, `hoverUtil.ts`, `decoration.ts`, `commentDecoration.ts`, `concise.ts`, `blockParser.ts`, `codelen.ts` | `codelen.ts` = placeholder CodeLens untuk spacing mode contrast. |
-| Commands/Copilot | `command/*.ts`, `copilot/translate.ts`, `copilot/prompt.ts` | 5 command tak ada di `contributes.commands` (4 `_`-prefix untuk link hover + `toggleEnableHover`). |
-| Translate | `translate/*.ts`, `plugin/translateAli.ts` | Ali di-expose lewat API ekstensi ini sendiri (`extendTranslate`). |
+| Commands/Copilot | `command/*.ts`, `copilot/translate.ts`, `copilot/prompt.ts` | 5 command tak ada di `contributes.commands` (4 `_`-prefix untuk link hover + `toggleEnableHover`). `command/sourceSetup.ts` = `setDeepLApiKey` + `selectLanguageModel`. |
+| Translate | `translate/*.ts`, `plugin/translateAli.ts`, `util/timeout.ts` | Ali di-expose lewat API ekstensi ini sendiri (`extendTranslate`). `FallbackTranslate.ts` = komposit rantai fallback; `util/timeout.ts` = `withTimeout` dipakai Bing dan sumber language model. |
+
+Sumber terjemahan built-in (key = nilai `commentTranslate.source`):
+
+| Key | Class | `maxLen` | Timeout request | Setting / kredensial |
+|---|---|---|---|---|
+| `Google` | `GoogleTranslate` | 500 | 10 s (opsi `got`) | `googleTranslate.tld`, `googleTranslate.mirror` |
+| `Bing` | `BingTranslate` | 1000 | 10 s (`withTimeout`) | — |
+| `DeepL` | `DeepLTranslate` | 5000 | 10 s (`AbortSignal.timeout`) | API key di SecretStorage `commentTranslate.deepl.apiKey` (command `setDeepLApiKey`), tidak ada di settings |
+| `Copilot` | `LanguageModelTranslate` (semua model `vscode.lm`, bukan hanya Copilot) | 2000 | 30 s (`withTimeout` + cancel token) | `languageModel.id` (command `selectLanguageModel`; kosong = model `copilot` pertama) |
+| `TranSmart` | `TranSmartTranslate` | 5000 | tidak ada | — |
+
+Setting baru di branch ini: `commentTranslate.fallbackSources` (array id built-in, default `[]`, dicoba berurutan setelah `source` gagal) dan `commentTranslate.languageModel.id`. `maxLen` rantai = minimum `maxLen` anggota, jadi `Google` di dalam rantai memperkecil chunk semua anggota menjadi 500.
 
 Titik perluasan:
-- Sumber terjemahan built-in baru: class implement `ITranslate` (lib `comment-translate-manager`), tambah ke `buildInTranslate` di `translate/manager.ts`.
+- Sumber terjemahan built-in baru: class implement `ITranslate` (lib `comment-translate-manager`), tambah ke `buildInTranslate` di `translate/manager.ts`. Sumber built-in otomatis bisa dipakai di `fallbackSources`; sumber dari ekstensi lain tidak (rantai hanya mendukung built-in).
 - Command baru: `command/command.ts` + `contributes.commands` + `package.nls*.json` (+ `menus`/`keybindings`).
 - Slash command Copilot: `chatParticipants[0].commands` + `strategyRegistry.register` di `copilot/translate.ts`.
 - Konstruk Markdown yang dilindungi: `parseInlineSegments` / `parseMarkdownLines` di `syntax/markdownDocument.ts`.
@@ -62,6 +77,10 @@ Titik perluasan:
 - `translateExtensionProvider.init()` di `manager.ts` **tidak di-await**; sampai sumber terdaftar, `translate()` reject `Translate not found.`
 - Error terjemahan → lib balikin `''`. Error asli tetap tercatat di output channel lewat `_subTranslate` (`e.toString()`); baris `{}` sesudahnya cuma noise dari lib. Sejak branch `fix/translate-source-reliability`, `cachedTranslate` tidak lagi menyimpan `''` ke session cache (dulu kegagalan sesaat menempel sampai config berubah).
 - `bing-translate-api` 2.x rusak terhadap Bing sekarang (`401`, terukur 0/12 pada 2026-10-20); 4.3.0 OK 12/12. Google `translate_a/single` kena `429` intermiten (~45% sukses) — batas eksternal, bukan bug kode.
+- `bing-translate-api` 4.x tanpa timeout request dan menyimpan promise konfigurasi global yang ditolak di state modul (`node_modules/bing-translate-api/src/index.js:246-256`): setelah satu kali gagal ambil konfigurasi, semua panggilan Bing gagal sampai extension host restart. `BingTranslate` hanya membatasi waktu (`withTimeout` 10 s), tidak bisa mereset state itu. Mitigasi: `commentTranslate.fallbackSources` atau reload window.
+- Timeout: Google 10 s (`got`), Bing 10 s (`withTimeout`), DeepL 10 s (`AbortSignal.timeout`), language model 30 s (`withTimeout` membungkus kirim sampai stream habis, jadi tetap menolak walau provider mengabaikan cancellation dan teks parsial tidak pernah dikembalikan). `withTimeout` tidak membatalkan pekerjaan di baliknya; pemanggil yang bisa membatalkan (token `vscode.lm`) harus melakukannya sendiri. Request yang menggantung tanpa batas mengunci `pendingTranslateTasks` di `manager.ts` dan rantai fallback tidak pernah pindah anggota.
+- Rantai fallback: hasil sukses tersimpan di `workspaceState` di bawah key rantai (`chain:A>B`), jadi pulihnya sumber utama tidak menimpa hasil anggota cadangan yang sudah tersimpan. Mengganti isi/urutan rantai membuat ruang key baru; entri lama tidak dibersihkan. `getFallbackSources()` membuang nilai non-array dan entri non-string dari settings; id yang salah ketik membuat rantai dibatalkan dan hanya `source` yang dipakai (satu baris log di output channel).
+- Key DeepL dibaca dari SecretStorage pada setiap panggilan (tanpa memo) dan hanya menerima ASCII printable tanpa spasi (`validateInput` di `setDeepLApiKey`), karena undici mengulang isi header yang tidak valid di teks error, yang dicatat ke output channel.
 - Tidak ada `deactivate()`; banyak `onDidChangeConfiguration` tak di-dispose (`configuration.ts`, `manager.ts`, `translateAli.ts` per instance).
 - `Comment.ts` cache per dokumen hanya dibersihkan `onDidChangeTextDocument`, tidak pada close.
 - `markdownDocument.ts` pakai Map modul-level (`lineInlineSegments`, `tableRowCellSegments`) yang di-reset tiap parse → race bila 2 preview paralel.

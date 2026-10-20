@@ -90,7 +90,9 @@ export class TranslateExtensionProvider {
             }
             return this.switchTranslate(ids[0]);
         }
-        // The key changes whenever the chain changes, so setSource always builds a fresh instance.
+        // The key changes whenever the chain changes, so setSource builds a fresh instance then.
+        // Re-applying the identical chain keeps the existing instance, which is harmless
+        // because members read their key, model and config on every call.
         const key = `chain:${ids.join('>')}`;
         this._translateManager.registry(key, createFallbackTranslate(members));
         return this._translateManager.setSource(key);

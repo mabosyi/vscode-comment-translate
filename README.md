@@ -60,7 +60,7 @@ The extension provides translation or replacement commands for various scenarios
 The extension supports the following translation services:
 - **Google Translate**: Built-in, free version, used by default.
   - **Note**: Requires a network connection, some users may need a proxy. If encountering network issues, it is recommended to use Bing.
-- **Bing Translate**: Built-in, free version.
+- **Bing Translate**: Built-in, free version. If Bing stops working for the rest of a session, reload the window or configure `commentTranslate.fallbackSources`.
 - **AliCloud Translate**: Built-in, requires configuration of accessKeyId & accessKeySecret.
 - **DeepL**: Built-in, requires an API key (Free keys end with `:fx`). Set it with `Comment Translate: Set DeepL API Key`; the key is stored in VS Code SecretStorage, not in settings.
 - **VS Code Language Model** (`Copilot` source): Built-in, uses any chat model registered in VS Code, such as GitHub Copilot models or other providers. Pick one with `Comment Translate: Select Language Model`.

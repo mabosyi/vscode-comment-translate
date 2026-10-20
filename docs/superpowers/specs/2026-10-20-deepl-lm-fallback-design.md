@@ -2,7 +2,7 @@
 
 Tanggal: 2026-10-20
 Branch dasar: `fix/translate-source-reliability`
-Status: disetujui user, menunggu rencana implementasi
+Status: sudah diimplementasikan di branch `fix/translate-source-reliability`, menunggu verifikasi manual oleh user (bagian 9)
 
 ## 1. Latar belakang
 
@@ -107,7 +107,7 @@ Key sumber built-in tetap `Copilot`, jadi setting `commentTranslate.source = "Co
 - Model dipilih dengan `lm.selectChatModels()` tanpa selector, lalu difilter di sisi ekstensi dengan `m.id === languageModel.id`. Bila setting kosong, dipakai model pertama dengan `vendor === 'copilot'`. Bila tidak ada model, melempar error yang menyuruh user menjalankan "Comment Translate: Select Language Model".
 - `LanguageModelError` dengan code `NoPermissions` diterjemahkan menjadi pesan yang sama, karena consent belum diberikan.
 - Prompt dibuat oleh fungsi murni `buildTranslatePrompt(text, to)` yang diekspor untuk test. Nama bahasa diambil dari `new Map(LANGS).get(to) ?? to` (`src/lang.ts`). Instruksinya: terjemahkan komentar source code untuk engineer firmware ke bahasa tujuan; keluarkan tepat N baris dengan baris ke-i menerjemahkan baris input ke-i; jangan ubah identifier, nama register atau macro, angka hex, path, dan kode dalam backtick; keluarkan terjemahannya saja. N dihitung dari input.
-- Dikirim sebagai satu `LanguageModelChatMessage.User`, dengan `CancellationTokenSource` yang dibatalkan setelah 30 detik. Fragmen hasil digabung lalu newline di akhir dipangkas.
+- Dikirim sebagai satu `LanguageModelChatMessage.User`. Seluruh permintaan (kirim sampai stream habis) dibungkus `withTimeout` 30 detik (bagian 6.7), jadi promise ditolak dengan `Language model request timed out after 30 s` walau provider mengabaikan cancellation, dan teks parsial tidak pernah dikembalikan. `CancellationTokenSource` dibatalkan di blok `finally` supaya provider berhenti setelah timeout; membatalkannya setelah permintaan selesai tidak berefek. Fragmen hasil digabung lalu newline di akhir dipangkas.
 - `link()` mengembalikan `''`.
 
 ### 6.4 Command `commentTranslate.selectLanguageModel` (baru)
@@ -130,16 +130,16 @@ Key sumber built-in tetap `Copilot`, jadi setting `commentTranslate.source = "Co
 
 `src/translate/translateExtension.ts`, method baru `applySources(primary: string, fallbacks: string[])`:
 
-1. `ids = dedupe([primary, ...fallbacks])` dengan string kosong dibuang.
-2. Bila `ids.length === 1`, atau ada id yang tidak ditemukan sebagai built-in di `_translateConfig` (extensionId `'BuildIn'` dengan `ctor`), panggil `switchTranslate(primary)` seperti sekarang. Untuk kasus id non-built-in, tulis satu baris log ke output channel "Comment Translate" (lewat `showError`) bahwa `fallbackSources` v1 hanya mendukung sumber built-in.
-3. Selain itu, daftarkan `createFallbackTranslate(members)` dengan key `chain:${ids.join('>')}` lalu `setSource(key)`. Jalur ini sinkron, jadi tidak ada race dengan aktivasi ekstensi. Key berubah setiap kali urutan berubah, sehingga `setSource` selalu membuat instance baru.
+1. `ids = dedupe([primary, ...fallbacks])` dengan string kosong dibuang. Bila `ids` kosong, `applySources` langsung mengembalikan `null`.
+2. Bila `ids.length === 1`, atau ada id yang tidak ditemukan sebagai built-in di `_translateConfig` (extensionId `'BuildIn'` dengan `ctor`), panggil `switchTranslate(ids[0])` seperti sekarang. `ids[0]` adalah `primary`, kecuali `primary` kosong. Bila ada lebih dari satu id, tulis satu baris log ke output channel "Comment Translate" (lewat `showError`) bahwa `fallbackSources` v1 hanya mendukung sumber built-in. Baris log ini juga muncul untuk id yang salah ketik atau tidak dikenal, bukan hanya untuk sumber ekstensi pihak ketiga.
+3. Selain itu, daftarkan `createFallbackTranslate(members)` dengan key `chain:${ids.join('>')}` lalu `setSource(key)`. Jalur ini sinkron, jadi tidak ada race dengan aktivasi ekstensi. Key berubah setiap kali isi atau urutan rantai berubah, sehingga `setSource` membuat instance baru saat itu. Menerapkan ulang rantai yang identik mempertahankan instance yang ada (`setSource` langsung kembali bila key sama). Ini tidak bermasalah karena setiap anggota membaca key, model, dan config pada setiap panggilan, bukan di constructor.
 
-`applySources` mengembalikan translator aktif yang dihasilkan `setSource` atau `switchTranslate`, atau nilai falsy bila tidak ada sumber yang bisa dipasang. `init(source)` memanggil `applySources(source, getFallbackSources())` dan, bila hasilnya falsy, tetap jatuh ke `switchTranslate('Google')` seperti sekarang. `getFallbackSources()` (di `manager.ts`) membaca nilai mentah `settings.json` lalu membuang nilai non-array dan entri non-string, supaya isi pengaturan yang salah tipe tidak melempar error.
+`applySources` mengembalikan translator aktif yang dihasilkan `setSource` atau `switchTranslate`, atau nilai falsy bila tidak ada sumber yang bisa dipasang. `init(source, fallbacks)` memanggil `applySources(source, fallbacks)` dan, bila hasilnya falsy, tetap jatuh ke `switchTranslate('Google')` seperti sekarang. `initTranslate` meneruskan `getFallbackSources()` sebagai `fallbacks`. `getFallbackSources()` (di `manager.ts`) membaca nilai mentah `settings.json` lalu membuang nilai non-array dan entri non-string, supaya isi pengaturan yang salah tipe tidak melempar error.
 
 `src/translate/manager.ts`:
 - tambah `{ title: 'DeepL translate', ctor: DeepLTranslate, translate: 'DeepL' }` ke `buildInTranslate`;
 - ganti `CopilotTranslate` dengan `LanguageModelTranslate`;
-- listener `source` dan `fallbackSources` membersihkan session cache lalu memanggil `applySources`. Dengan begitu edit manual `settings.json` juga ikut berpindah sumber. Command `changeTranslateSource` memanggil `applySources(target, fallbackSources)` alih-alih `switchTranslate`. Memilih ulang sumber yang sama tidak memicu event konfigurasi, jadi tanpa perubahan ini rantai fallback akan diganti sumber tunggal sampai reload.
+- listener `source` dan `fallbackSources` membersihkan session cache lalu memanggil `applySources`. Dengan begitu edit manual `settings.json` juga ikut berpindah sumber. `onConfigChange` membuang promise yang dikembalikan callback, jadi listener menangani promise itu sendiri: hasil falsy dilaporkan lewat `showError` ke output channel "Comment Translate" (`Can not switch translate source to '<id>'.`), dan rejection (misalnya ekstensi pihak ketiga gagal aktif) dilaporkan dengan pesan error-nya. Command `changeTranslateSource` memanggil `applySources(target, fallbackSources)` alih-alih `switchTranslate`. Memilih ulang sumber yang sama tidak memicu event konfigurasi, jadi tanpa perubahan ini rantai fallback akan diganti sumber tunggal sampai reload.
 - listener `languageModel.id` membersihkan session cache.
 
 `src/command/command.ts` mendaftarkan dua command baru. `package.json` mendapat:
@@ -153,9 +153,22 @@ Key sumber built-in tetap `Copilot`, jadi setting `commentTranslate.source = "Co
 
 String NLS ditambahkan ke `package.nls.json`. Locale lain otomatis jatuh ke bahasa Inggris.
 
+### 6.7 `src/util/timeout.ts` (baru)
+
+`withTimeout(promise, ms, label)` menolak dengan `Error('<label> timed out after <ms/1000> s')` bila `promise` belum selesai dalam `ms`, dan membersihkan timer saat promise selesai. Pekerjaan di balik promise tidak dibatalkan, jadi pemanggil yang bisa membatalkan harus melakukannya sendiri. Pemakai:
+
+| Sumber | Batas | Alasan |
+|---|---|---|
+| Bing (`BingTranslate._translate`) | 10 detik | `bing-translate-api` 4.3.0 tidak punya timeout request. Tanpa batas, request yang menggantung membuat translate task macet dan rantai fallback tidak pernah pindah ke anggota berikutnya. Nilainya sama dengan timeout Google dan DeepL. |
+| Language model (`translateWithModel`) | 30 detik | Provider yang mengabaikan cancellation membuat `for await` menggantung tanpa batas. |
+
 ## 7. Trade-off yang diterima
 
 Masing-masing ditandai komentar `ponytail:` di kode:
+
+- `bing-translate-api` 4.x menyimpan promise konfigurasi global yang ditolak di state modul (`node_modules/bing-translate-api/src/index.js:246-256`). Setelah satu kali gagal mengambil konfigurasi, setiap panggilan Bing gagal sampai extension host dimulai ulang. Mitigasi: `commentTranslate.fallbackSources` atau reload window. Jalan upgrade: perbaikan di upstream `bing-translate-api`.
+- DeepL tidak mengulang request pada `429`/`5xx`. Kegagalan diserahkan ke rantai fallback, dan karena hasil `''` tidak di-cache, request berikutnya mencoba lagi. Jalan upgrade: retry terbatas dengan backoff untuk `429`/`529`/`5xx`.
+- Key DeepL dibaca dari `ctx.secrets` pada setiap panggilan tanpa memo. Bila latensi SecretStorage terlihat, tambahkan memo dengan satu listener `ctx.secrets.onDidChange` yang didaftarkan sekali.
 
 - Hasil fallback tersimpan permanen di `workspaceState` di bawah key rantai. Bila DeepL pulih, komentar yang sempat diterjemahkan Bing tetap memakai hasil Bing. Command clear-cache ditambah bila ini mengganggu.
 - Mengganti urutan rantai membuat ruang key `workspaceState` baru, dan entri lama tidak pernah dibersihkan.
@@ -180,7 +193,8 @@ Unit test jest di `test/non-extension/translate/`. Mock yang dibutuhkan, karena 
 | Unit | Kasus |
 |---|---|
 | DeepL | endpoint Free untuk key `:fx` dan Pro untuk key lain; header auth; mapping `zh-CN`, `zh-TW`, `en`, `id`; `auto` tidak mengirim `source_lang`; source sama dengan target tidak mengirim `source_lang`; input kosong tanpa `fetch`; key hilang melempar error; non-2xx melempar error dengan status dan pesan |
-| Language Model | `buildTranslatePrompt` memakai nama bahasa dan jumlah baris yang benar; tanpa model melempar error; filter `id` memilih model yang tepat |
+| Language Model | `buildTranslatePrompt` memakai nama bahasa dan jumlah baris yang benar; tanpa model melempar error; filter `id` memilih model yang tepat; provider yang tidak pernah selesai ditolak setelah 30 detik dan token dibatalkan |
+| Timeout | `withTimeout` mengembalikan nilai bila promise selesai lebih dulu; menolak dengan `<label> timed out after N s` bila tidak; meneruskan rejection dari promise |
 | Fallback | anggota pertama melempar error lalu anggota kedua dipakai; `''` lalu anggota berikutnya; semua gagal melempar error terakhir; `maxLen` minimum; input kosong tidak memanggil anggota |
 | Wiring | `applySources` dengan fallback kosong memanggil `switchTranslate`; dengan id non-built-in memakai jalur lama; dengan semua built-in mendaftarkan key `chain:` |
 

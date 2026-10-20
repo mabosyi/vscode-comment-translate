@@ -11,8 +11,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ### Fixed
 * Bing source: bump `bing-translate-api` to 4.3.0 (2.10.0 failed every request with 401).
 * A failed translation is no longer cached for the session, so the next request retries.
+* Language model and Bing requests now time out (30 s / 10 s) instead of hanging.
 
-### Add
+### Planned
  * 独立Pannel
    * 翻译历史
    * 多翻译源对比

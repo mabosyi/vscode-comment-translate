@@ -50,12 +50,16 @@ async function readErrorMessage(res: Response): Promise<string> {
 export class DeepLTranslate extends BaseTranslate {
     override readonly maxLen = 5000;
 
-    // No retry here: failures surface to the fallback chain, and failed results are not
-    // cached, so the next hover retries anyway.
+    // ponytail: no retry on 429/5xx. A failure surfaces to the fallback chain, and failed
+    // results are not cached, so the next request retries anyway. Upgrade path: a bounded
+    // retry with backoff for 429/529/5xx if a fallback chain is not enough.
     async _translate(content: string, { from, to = 'en' }: { from?: string; to?: string }): Promise<string> {
         if (!content.trim()) {
             return '';
         }
+        // ponytail: the key is read from SecretStorage on every call (no memo), so a key
+        // change takes effect immediately. If SecretStorage latency ever shows up, memoize it
+        // and invalidate with a single ctx.secrets.onDidChange listener registered once.
         const key = await ctx.secrets.get(DEEPL_SECRET_KEY);
         if (!key) {
             throw new Error('DeepL API key is not set. Run "Comment Translate: Set DeepL API Key".');
