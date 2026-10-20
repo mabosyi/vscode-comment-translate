@@ -91,7 +91,7 @@ Semua pemanggil tetap lewat `translateManager`, jadi hover, mode browse, preview
 - Body JSON `{ text: [content], target_lang, source_lang? }`. Teks dikirim sebagai satu string, tanpa pemecahan per baris dan tanpa `context`, sama seperti referensi `yxw007/translate`.
 - Mapping target: `zh-CN` ke `ZH-HANS`, `zh-TW` ke `ZH-HANT`, `en` ke `EN-US`, `pt` ke `PT-BR`, lainnya upper-case. Mapping `en` dan `pt` adalah pilihan desain, bukan kewajiban yang terdokumentasi.
 - Mapping source: `auto` tidak dikirim, `zh-CN` dan `zh-TW` menjadi `ZH`, lainnya upper-case kode dasar. `source_lang` juga tidak dikirim bila kode dasarnya sama dengan kode dasar target, untuk menghindari `400`.
-- `fetch` dengan `AbortSignal.timeout(10000)`. Tidak ada retry: kegagalan ditangani rantai fallback, dan karena hasil `''` tidak di-cache, hover berikutnya otomatis mencoba lagi.
+- `fetch` dengan `AbortSignal.timeout(10000)`. Paling banyak dua request DeepL berjalan bersamaan, lewat satu gerbang untuk seluruh proses yang tetap dipegang selama retry. Status `429`, `529`, `500`, `503`, dan `504` diulang paling banyak dua kali dengan jeda 1 detik lalu 2 detik, atau mengikuti header `Retry-After` dengan batas 5 detik. Status `403`, `456`, dan 4xx lain serta timeout tidak diulang, lalu dilempar ke rantai fallback. Desain awal tanpa retry diganti setelah pengukuran 2026-10-20: mode browse mengirim 575 request ke key Free, dan 483 di antaranya gagal `429` karena tidak ada pembatas.
 - Non-2xx melempar `Error(\`DeepL ${status}: ${message}\`)`. `message` dibaca dari `body.message ?? body.error?.message`, atau `statusText` bila body bukan JSON.
 - `link()` menghasilkan `[DeepL](https://www.deepl.com/translator#auto/<to>/<encoded text>)`.
 
@@ -162,12 +162,24 @@ String NLS ditambahkan ke `package.nls.json`. Locale lain otomatis jatuh ke baha
 | Bing (`BingTranslate._translate`) | 10 detik | `bing-translate-api` 4.3.0 tidak punya timeout request. Tanpa batas, request yang menggantung membuat translate task macet dan rantai fallback tidak pernah pindah ke anggota berikutnya. Nilainya sama dengan timeout Google dan DeepL. |
 | Language model (`translateWithModel`) | 30 detik | Provider yang mengabaikan cancellation membuat `for await` menggantung tanpa batas. |
 
+### 6.8 Teks yang sudah berbahasa target tidak dikirim
+
+`isSameLanguage(detected, target)` di `src/lang.ts` memutuskan apakah teks hasil deteksi cld3 sudah berbahasa target. Aturannya prefix (`zh` cocok dengan `zh-CN`) ditambah alias deteksi: untuk target `id`, hasil `ms` (Melayu) dianggap bahasa Indonesia, karena cld3 sering salah mengenali bahasa Indonesia sebagai Melayu. Hasil `und` dan string kosong tidak pernah cocok.
+
+Fungsi ini dipakai di tiga tempat:
+- `cachedTranslate` mendeteksi bahasa di dalam task (sehingga dedupe request in-flight tetap utuh) dan mengembalikan teks asli tanpa request bila sudah berbahasa target. Jalur Markdown, mode browse, dan preview memakai jalur ini dengan target apa adanya.
+- `autoMutualTranslate` memakainya untuk membalik arah ke `sourceLanguage` saat `mutualTranslate` aktif.
+- `marked.ts` memakainya untuk melewati baris hover-content yang sudah berbahasa target.
+
+Data 2026-10-20: dari 95 teks Indonesia yang dikirim ke DeepL, cld3 mengenali 68 sebagai `id` dan 10 sebagai `ms`. Semuanya kini dilewati tanpa request.
+
 ## 7. Trade-off yang diterima
 
 Masing-masing ditandai komentar `ponytail:` di kode:
 
 - `bing-translate-api` 4.x menyimpan promise konfigurasi global yang ditolak di state modul (`node_modules/bing-translate-api/src/index.js:246-256`). Setelah satu kali gagal mengambil konfigurasi, setiap panggilan Bing gagal sampai extension host dimulai ulang. Mitigasi: `commentTranslate.fallbackSources` atau reload window. Jalan upgrade: perbaikan di upstream `bing-translate-api`.
-- DeepL tidak mengulang request pada `429`/`5xx`. Kegagalan diserahkan ke rantai fallback, dan karena hasil `''` tidak di-cache, request berikutnya mencoba lagi. Jalan upgrade: retry terbatas dengan backoff untuk `429`/`529`/`5xx`.
+- Gerbang DeepL dua lajur berlaku untuk seluruh proses, jadi hover bisa menunggu di belakang request mode browse, dan satu request yang di-retry bisa memakan sekitar 3 detik sebelum rantai fallback mengambil alih. Jalan upgrade: kirim beberapa teks dalam satu request (DeepL menerima hingga 50).
+- Deteksi bahasa (cld3) bisa keliru pada teks pendek atau campuran. Teks yang salah terdeteksi sebagai bahasa target tidak diterjemahkan dan ditampilkan apa adanya.
 - Key DeepL dibaca dari `ctx.secrets` pada setiap panggilan tanpa memo. Bila latensi SecretStorage terlihat, tambahkan memo dengan satu listener `ctx.secrets.onDidChange` yang didaftarkan sekali.
 
 - Hasil fallback tersimpan permanen di `workspaceState` di bawah key rantai. Bila DeepL pulih, komentar yang sempat diterjemahkan Bing tetap memakai hasil Bing. Command clear-cache ditambah bila ini mengganggu.
@@ -192,7 +204,8 @@ Unit test jest di `test/non-extension/translate/`. Mock yang dibutuhkan, karena 
 
 | Unit | Kasus |
 |---|---|
-| DeepL | endpoint Free untuk key `:fx` dan Pro untuk key lain; header auth; mapping `zh-CN`, `zh-TW`, `en`, `id`; `auto` tidak mengirim `source_lang`; source sama dengan target tidak mengirim `source_lang`; input kosong tanpa `fetch`; key hilang melempar error; non-2xx melempar error dengan status dan pesan |
+| DeepL | endpoint Free untuk key `:fx` dan Pro untuk key lain; header auth; mapping `zh-CN`, `zh-TW`, `en`, `id`; `auto` tidak mengirim `source_lang`; source sama dengan target tidak mengirim `source_lang`; input kosong tanpa `fetch`; key hilang melempar error; non-2xx melempar error dengan status dan pesan; `429` di-retry dengan backoff lalu berhasil; menyerah setelah dua retry; menunggu `Retry-After`; `456` tidak di-retry; paling banyak dua request bersamaan |
+| Deteksi bahasa | `isSameLanguage` untuk prefix, alias `ms` untuk target `id`, bahasa berbeda, dan `und`; `cachedTranslate` mengembalikan teks Indonesia tanpa request untuk target `id` |
 | Language Model | `buildTranslatePrompt` memakai nama bahasa dan jumlah baris yang benar; tanpa model melempar error; filter `id` memilih model yang tepat; provider yang tidak pernah selesai ditolak setelah 30 detik dan token dibatalkan |
 | Timeout | `withTimeout` mengembalikan nilai bila promise selesai lebih dulu; menolak dengan `<label> timed out after N s` bila tidak; meneruskan rejection dari promise |
 | Fallback | anggota pertama melempar error lalu anggota kedua dipakai; `''` lalu anggota berikutnya; semua gagal melempar error terakhir; `maxLen` minimum; input kosong tidak memanggil anggota |

@@ -12,6 +12,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 * Bing source: bump `bing-translate-api` to 4.3.0 (2.10.0 failed every request with 401).
 * A failed translation is no longer cached for the session, so the next request retries.
 * Language model and Bing requests now time out (30 s / 10 s) instead of hanging.
+* DeepL: at most two requests run at once, and 429/529/5xx responses are retried with backoff (respecting `Retry-After`), so browse mode no longer floods a Free key into a wall of 429 errors.
+* Text that is already in the target language is no longer sent for translation (Malay detection counts as Indonesian for an Indonesian target), saving quota and requests.
 
 ### Planned
  * 独立Pannel
