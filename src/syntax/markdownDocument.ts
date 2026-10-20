@@ -220,9 +220,15 @@ function parseInlineSegments(content: string): InlineSegment[] {
                         // Image-in-link – keep entire raw token untranslated
                         segments.push({ raw: token.raw, translatable: false });
                     } else if (linkText && linkText.trim()) {
-                        // Build the URL suffix: ](href "title") or ](href)
+                        // URL suffix: everything after the link text, taken verbatim
+                        // from the source so reconstructInlineContent can locate it
+                        // (e.g. `](href 'title')` or `][ref]`). Fall back to a rebuilt
+                        // `](href "title")` when the text was unescaped by marked.
+                        const sourcePrefix = `[${linkText}`;
                         const titlePart = linkTitle ? ` "${linkTitle}"` : '';
-                        const urlSuffix = `](${linkHref}${titlePart})`;
+                        const urlSuffix = token.raw.startsWith(sourcePrefix)
+                            ? token.raw.slice(sourcePrefix.length)
+                            : `](${linkHref}${titlePart})`;
 
                         segments.push({ raw: '[', translatable: false });
                         segments.push({ raw: linkText, translatable: true });
@@ -317,6 +323,18 @@ function extractInlineTranslatableText(content: string): {
 /**
  * Reconstruct inline content by replacing translatable segments with
  * translated text parts.
+ *
+ * Segments are in source order and each `raw` is a verbatim slice of
+ * `originalContent`, so the content is rebuilt left to right with a moving
+ * cursor: every segment (translatable or not) is located with
+ * `indexOf(raw, cursor)`, the text before it is copied, and the translated
+ * part (or the untouched raw text) is appended. `String.replace` is avoided on
+ * purpose: it hits the first occurrence anywhere in the line (a short segment
+ * such as ":" would match inside a non-translatable href) and it interprets
+ * `$&`, `$'`, `` $` `` and `$$` in the replacement text.
+ *
+ * A segment that cannot be found after the cursor is left out: its translated
+ * part is consumed and the original text stays as is.
  */
 function reconstructInlineContent(
     originalContent: string,
@@ -324,18 +342,21 @@ function reconstructInlineContent(
     translatedParts: string[]
 ): string {
     let partIndex = 0;
-    let result = originalContent;
+    let cursor = 0;
+    let result = '';
 
     for (const segment of segments) {
-        if (segment.translatable && partIndex < translatedParts.length) {
-            const translatedPart = translatedParts[partIndex];
-            partIndex++;
-            // Replace the first occurrence of this segment's raw text
-            result = result.replace(segment.raw, translatedPart);
+        const hasPart = segment.translatable && partIndex < translatedParts.length;
+        const translatedPart = hasPart ? translatedParts[partIndex++] : segment.raw;
+        const start = originalContent.indexOf(segment.raw, cursor);
+        if (start === -1) {
+            continue;
         }
+        result += originalContent.slice(cursor, start) + translatedPart;
+        cursor = start + segment.raw.length;
     }
 
-    return result;
+    return result + originalContent.slice(cursor);
 }
 
 // ── Table row handling ───────────────────────────────────────────────────

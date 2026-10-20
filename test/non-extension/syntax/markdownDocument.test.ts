@@ -1150,3 +1150,82 @@ describe("translateMarkdownDocument with links", () => {
         expect(lines[2]).toMatch(/^> /);
     });
 });
+
+// ── Inline reconstruction: cursor-based, no String.replace ───────────────
+// Regression for upstream issue #309: a short translatable segment (":" or ".")
+// used to replace the FIRST matching character in the line, which could sit
+// inside a non-translatable href; "$&" / "$'" in a translation were also
+// interpreted as replacement patterns.
+
+describe("translateMarkdownDocument keeps non-translatable inline parts intact", () => {
+    // Deterministic fake translator, applied per line: ASCII ":" and "."
+    // become their full-width forms, any other text is upper-cased.
+    const fakeTranslate = async (text: string): Promise<string> =>
+        text
+            .split("\n")
+            .map((line) => (line === ":" ? "\uFF1A" : line === "." ? "\u3002" : line.toUpperCase()))
+            .join("\n");
+
+    it("does not touch the colon inside an HTML href when a lone ':' segment is translated", async () => {
+        const source = 'Click <a href="vscode:mcp/install?x=1">here</a> to install, or use the gallery at [the marketplace](https://code.visualstudio.com/mcp):';
+
+        const result = await translateMarkdownDocument(source, fakeTranslate);
+
+        expect(result).toContain('<a href="vscode:mcp/install?x=1">');
+        expect(result).toContain("](https://code.visualstudio.com/mcp)");
+        expect(result.endsWith("\uFF1A")).toBe(true);
+        expect(result).toContain("CLICK ");
+    });
+
+    it("does not touch the colon inside a Markdown link destination", async () => {
+        const result = await translateMarkdownDocument("[t](http://x):", fakeTranslate);
+
+        expect(result).toBe("[T](http://x)\uFF1A");
+    });
+
+    it("does not touch the dot inside an href when a lone '.' segment is translated", async () => {
+        const source = 'Click <a href="https://cursor.com/en/install-mcp">here</a>.';
+
+        const result = await translateMarkdownDocument(source, fakeTranslate);
+
+        expect(result).toContain('<a href="https://cursor.com/en/install-mcp">');
+        expect(result.endsWith("\u3002")).toBe(true);
+    });
+
+    it("does not touch the colon inside an href in a table cell", async () => {
+        const source = '| Col |\n| --- |\n| <a href="vscode:x">: |';
+
+        const result = await translateMarkdownDocument(source, fakeTranslate);
+
+        expect(result.split("\n")[2]).toBe('| <a href="vscode:x">\uFF1A |');
+    });
+
+    it("does not touch the colon inside a link whose title uses single quotes", async () => {
+        // The link suffix must be taken from the source, not rebuilt as `](href "title")`,
+        // otherwise the cursor never moves past the destination.
+        const result = await translateMarkdownDocument("[t](http://x 'ti'):", fakeTranslate);
+
+        expect(result).toBe("[T](http://x 'ti')：");
+    });
+
+    it("keeps '$&', \"$'\", '$`' and '$$' in a translation literal", async () => {
+        const source = "Use `code` for the value here.";
+        const translated = "costs $& and $' and $` and $$ end";
+
+        const result = await translateMarkdownDocument(source, async (text) =>
+            text.split("\n").map(() => translated).join("\n")
+        );
+
+        expect(result).toBe(`${translated}\`code\`${translated}`);
+    });
+
+    it("keeps '$&' literal in bold-initial lines and list items too", async () => {
+        const source = "- Run `npm test` before the release.";
+
+        const result = await translateMarkdownDocument(source, async (text) =>
+            text.split("\n").map(() => "$&").join("\n")
+        );
+
+        expect(result).toBe("- $&`npm test`$&");
+    });
+});
