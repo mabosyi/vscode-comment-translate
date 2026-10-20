@@ -73,7 +73,7 @@ Titik perluasan:
 
 ## Jebakan terverifikasi (baca sebelum ubah kode)
 
-- `CommentParse` split `getText().split('\n')` → di dokumen CRLF, `\r` ikut ke teks komentar/translator. Sebab test gagal di Windows.
+- CRLF sudah ditangani: `CommentParse` memecah `getText()` dengan `split(/\r?\n/)` dan `parseMarkdownLines` menormalkan `\r\n?` ke `\n` dulu, jadi `\r` tidak lagi masuk token komentar dan blok kode berpagar di Markdown CRLF tidak ikut diterjemahkan. `ICommentBlock.comment` tetap dari `TextDocument.getText(range)`, jadi di dokumen CRLF masih memuat `\r\n` asli. Kegagalan test `commentParse` di Windows berasal dari fixture CRLF, bukan dari parser (diatasi `.gitattributes`).
 - `translateExtensionProvider.init()` di `manager.ts` **tidak di-await**; sampai sumber terdaftar, `translate()` reject `Translate not found.`
 - Error terjemahan → lib balikin `''`. Error asli tetap tercatat di output channel lewat `_subTranslate` (`e.toString()`); baris `{}` sesudahnya cuma noise dari lib. Sejak branch `fix/translate-source-reliability`, `cachedTranslate` tidak lagi menyimpan `''` ke session cache (dulu kegagalan sesaat menempel sampai config berubah).
 - `bing-translate-api` 2.x rusak terhadap Bing sekarang (`401`, terukur 0/12 pada 2026-10-20); 4.3.0 OK 12/12. Google `translate_a/single` kena `429` intermiten (~45% sukses) — batas eksternal, bukan bug kode.

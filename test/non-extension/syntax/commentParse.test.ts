@@ -107,6 +107,25 @@ describe("CommentParse TypeScript", () => {
     });
 });
 
+describe("CommentParse CRLF document", () => {
+    test("comment token text carries no carriage return", async () => {
+        const textMateService = await mockTextMateService();
+        const code = "/**\n * first\n * second\n */\nexport const x = 1;\n".replace(/\n/g, "\r\n");
+        const doc = createTextDocument(Uri.file("crlf.ts"), code, "typescript");
+        const grammar = await textMateService.createGrammar("typescript");
+        if (grammar == null) throw new Error("typescript grammar not found");
+
+        const res = new CommentParse(doc, grammar).commentScopeParse(new Position(1, 4), isComment, false, {
+            ignoreHandle: ignoreComment, skipHandle: skipComment
+        });
+
+        expect(res.tokens?.length).toEqual(4);
+        for (const token of res.tokens!) {
+            expect(token.text).not.toContain("\r");
+        }
+    });
+});
+
 describe.skip("CommentParse XML", () => {
     let textMateService: TextMateService;
     let commentParse: CommentParse;

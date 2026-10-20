@@ -446,7 +446,8 @@ const lineInlineSegments = new Map<number, InlineSegment[]>();
  * lines are translatable and how to reconstruct them after translation.
  */
 export function parseMarkdownLines(source: string): LineMeta[] {
-    const lines = source.split('\n');
+    // Normalize CRLF (and lone CR) first: a trailing \r makes `.*$` in the fence regexes fail
+    const lines = source.replace(/\r\n?/g, '\n').split('\n');
     const result: LineMeta[] = [];
 
     // Clear caches

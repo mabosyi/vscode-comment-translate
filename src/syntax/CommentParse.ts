@@ -85,7 +85,8 @@ export class CommentParse {
     public maxLineLength = 20000;
 
     constructor(private _textDocument: TextDocument, private _grammar: IGrammar) {
-        this._model = _textDocument.getText().split('\n');
+        // Strip the \r of CRLF so it does not leak into token text; VS Code positions never count the EOL
+        this._model = _textDocument.getText().split(/\r?\n/);
     }
 
     private _parseTokensToLine(lineNumber: number): ITokenState[] {

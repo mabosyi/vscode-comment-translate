@@ -17,6 +17,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 * Text that is already in the target language is no longer sent for translation (Malay detection counts as Indonesian for an Indonesian target), saving quota and requests.
 * A source that merges or splits comment lines (Bing and Google can return a multi-line comment as one line) no longer drops the comment markers (`*`, `//`, `"""`) or leaves the browse and immersive views empty from the second line on: the translation is cut back into one line per source line.
 * Settings changed by commands (target language, translate source, multi-line merge, hover, browse mode) are now saved to the user profile instead of the workspace, and a stale workspace value is removed so it cannot hide the new one. Previously "Change translate source" updated only the workspace, and failed without an open folder.
+* CRLF line endings: fenced code blocks in Markdown files with CRLF line endings are no longer translated in the preview, and a trailing `\r` no longer leaks into comment token text.
 
 ### Planned
  * 独立Pannel

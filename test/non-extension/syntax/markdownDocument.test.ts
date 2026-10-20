@@ -159,6 +159,14 @@ More text`;
         expect(metas[7].translatable).toBe(true); // "More text"
     });
 
+    it("should parse CRLF sources the same as LF sources (fenced code stays non-translatable)", () => {
+        const lf = "a\n```c\nint x;\n```\nb";
+        const crlf = lf.replace(/\n/g, "\r\n");
+        const metas = parseMarkdownLines(crlf);
+        expect(metas.map(m => m.translatable)).toEqual([true, false, false, false, true]);
+        expect(metas).toEqual(parseMarkdownLines(lf));
+    });
+
     it("should mark math blocks as non-translatable", () => {
         const source = `Text before
 
