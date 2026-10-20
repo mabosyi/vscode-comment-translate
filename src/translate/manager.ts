@@ -5,7 +5,7 @@ import { ITranslateConfig, TranslateExtensionProvider } from "./translateExtensi
 import { GoogleTranslate } from "./GoogleTranslate";
 import { BingTranslate } from "./BingTranslate";
 import { detectLanguage } from "../lang";
-import { CopilotTranslate } from "./CopilotTranslate";
+import { LanguageModelTranslate } from "./LanguageModelTranslate";
 import { TranSmartTranslate } from "./TranSmartTranslate";
 
 
@@ -112,8 +112,8 @@ export function initTranslate(context: ExtensionContext) {
         translate: 'Bing'
     },
     {
-        title: 'Github Copilot translate',
-        ctor: CopilotTranslate,
+        title: 'VS Code Language Model (Copilot, ...)',
+        ctor: LanguageModelTranslate,
         translate: 'Copilot'
     },
     {

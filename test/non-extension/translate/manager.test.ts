@@ -22,6 +22,7 @@ jest.mock('../../../src/translate/translateExtension', () => ({
 // Sources built on the ESM-only `got` are irrelevant to caching; stub them out.
 jest.mock('../../../src/translate/GoogleTranslate', () => ({ GoogleTranslate: class {} }));
 jest.mock('../../../src/translate/TranSmartTranslate', () => ({ TranSmartTranslate: class {} }));
+jest.mock('../../../src/translate/LanguageModelTranslate', () => ({ LanguageModelTranslate: class {} }));
 
 import { ExtensionContext } from 'vscode';
 import { cachedTranslate, initTranslate, translateManager } from '../../../src/translate/manager';
