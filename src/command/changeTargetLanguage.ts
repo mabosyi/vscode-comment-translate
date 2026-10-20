@@ -1,5 +1,5 @@
 import { window } from "vscode";
-import { getConfiguration, selectTargetLanguage, selectTranslateSource } from "../configuration";
+import { getConfiguration, selectTargetLanguage, selectTranslateSource, updateUserSetting } from "../configuration";
 import { outputChannel } from "../extension";
 import { commentDecorationManager } from "../languageFeature/decoration";
 import { getFallbackSources, translateExtensionProvider } from "../translate/manager";
@@ -8,8 +8,7 @@ import { getFallbackSources, translateExtensionProvider } from "../translate/man
 export async function changeTargetLanguage() {
     let target = await selectTargetLanguage();
     if (target) {
-        const configuration = getConfiguration();
-        await configuration.update('targetLanguage', target);
+        await updateUserSetting('targetLanguage', target);
     }
 }
 
@@ -18,8 +17,7 @@ export async function changeTranslateSource() {
     if (targetSource) {
         let success = await translateExtensionProvider.applySources(targetSource, getFallbackSources());
         if (success) {
-            const configuration = getConfiguration();
-            await configuration.update('source', targetSource);
+            await updateUserSetting('source', targetSource);
             const msg = `Switch translate source to '${targetSource}'.`;
             outputChannel.appendLine(msg);
         } else {
@@ -33,13 +31,13 @@ export async function changeTranslateSource() {
 export async function toggleMultiLineMerge() {
     let configuration = getConfiguration();
     let origin = await configuration.get<boolean>('multiLineMerge');
-    await configuration.update('multiLineMerge', !origin);
+    await updateUserSetting('multiLineMerge', !origin);
 }
 
 export async function toggleEnableHover() {
     let configuration = getConfiguration();
     let origin = await configuration.get<boolean>('hover.enabled');
-    await configuration.update('hover.enabled', !origin);
+    await updateUserSetting('hover.enabled', !origin);
 }
 
 export async function openOutputPannel() {
@@ -51,7 +49,7 @@ export async function toggleBrowseMode() {
     let origin = await configuration.get<string>('browse.mode');
     let targetMode = origin === 'contrast' ? 'inplace' : 'contrast';
 
-    await configuration.update('browse.mode', targetMode);
+    await updateUserSetting('browse.mode', targetMode);
 }
 
 export async function toggleTempBrowseMode() {

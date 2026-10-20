@@ -15,6 +15,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 * DeepL: at most two requests run at once, and 429/529/5xx responses are retried with backoff (respecting `Retry-After`), so browse mode no longer floods a Free key into a wall of 429 errors.
 * Text that is already in the target language is no longer sent for translation (Malay detection counts as Indonesian for an Indonesian target), saving quota and requests.
 * A source that merges or splits comment lines (Bing and Google can return a multi-line comment as one line) no longer drops the comment markers (`*`, `//`, `"""`) or leaves the browse and immersive views empty from the second line on: the translation is cut back into one line per source line.
+* Settings changed by commands (target language, translate source, multi-line merge, hover, browse mode) are now saved to the user profile instead of the workspace, and a stale workspace value is removed so it cannot hide the new one. Previously "Change translate source" updated only the workspace, and failed without an open folder.
 
 ### Planned
  * 独立Pannel

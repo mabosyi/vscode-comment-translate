@@ -1,5 +1,5 @@
 
-import { workspace, window, QuickPickItem, ThemeIcon, commands, MarkdownString, Disposable } from 'vscode';
+import { workspace, window, QuickPickItem, ThemeIcon, commands, MarkdownString, Disposable, ConfigurationTarget } from 'vscode';
 import { translateExtensionProvider } from './translate/manager';
 import { LANGS } from './lang';
 
@@ -131,6 +131,22 @@ export function getConfig<T>(key: string, defaultValue?: T): T {
         value = defaultValue;
     }
     return value;
+}
+
+/**
+ * Save a setting changed by a command to the active user profile.
+ * `update(key, value)` without a target writes Workspace settings when a folder is open
+ * and throws when none is. Precedence is folder > workspace > user, so a stale workspace
+ * value would hide the new user value; it is removed here.
+ * ponytail: a workspace-folder value is not removed (inspect() without a resource does not report it); add it if reported.
+ */
+export async function updateUserSetting(key: string, value: unknown): Promise<void> {
+    const configuration = getConfiguration();
+    const hasWorkspaceValue = configuration.inspect(key)?.workspaceValue !== undefined;
+    await configuration.update(key, value, ConfigurationTarget.Global);
+    if (hasWorkspaceValue) {
+        await configuration.update(key, undefined, ConfigurationTarget.Workspace);
+    }
 }
 
 export function onConfigChange<T>(key: string, callback: (newValue: T) => void, thisArgs?: any, disposables?: Disposable[]) {
