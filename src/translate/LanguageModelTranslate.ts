@@ -17,13 +17,15 @@ export const LM_SETUP_HINT =
 
 // compile.ts re-aligns translations to comment lines (translate/lineBreakFallback.ts re-splits a
 // result whose line count differs), but a matching line count keeps each translated line on its own
-// source line, so the prompt pins the output to exactly one line per input line.
+// source line, so the prompt pins the output to exactly one line per input line and forbids
+// merging, splitting, reordering or dropping lines.
 export function buildTranslatePrompt(text: string, to: string): string {
     const language = LANGUAGE_NAMES.get(to) ?? to;
     const lineCount = text.split('\n').length;
     return [
         `Translate the following source-code comment for firmware engineers into ${language}.`,
         `Output exactly ${lineCount} line(s): line i of the output translates line i of the input, in the same order.`,
+        'Never merge, split, reorder or drop a line; a line that needs no translation is repeated unchanged.',
         'Keep identifiers, register and macro names, hex numbers, file paths and anything in backticks unchanged.',
         'Output only the translation, with no explanations and no code fences.',
         '',
@@ -41,6 +43,20 @@ export async function resolveModel(id: string): Promise<LanguageModelChat> {
     return model;
 }
 
+// Some models wrap the whole answer in one code fence despite the prompt. The wrapper is removed
+// only when the source has no fence of its own (otherwise a fence in the output is real content)
+// and both the opening and closing fence lines are present. Nothing else is cleaned up.
+function stripWrappingFence(output: string, input: string): string {
+    if (input.includes('```')) {
+        return output;
+    }
+    const lines = output.split('\n');
+    if (lines.length >= 2 && /^```[\w-]*\s*$/.test(lines[0]) && /^```\s*$/.test(lines[lines.length - 1])) {
+        return lines.slice(1, -1).join('\n');
+    }
+    return output;
+}
+
 export async function translateWithModel(model: LanguageModelChat, text: string, to: string): Promise<string> {
     const cancel = new CancellationTokenSource();
     const consume = async () => {
@@ -50,7 +66,7 @@ export async function translateWithModel(model: LanguageModelChat, text: string,
         for await (const fragment of response.text) {
             out += fragment;
         }
-        return out.replace(/\s+$/, '');
+        return stripWrappingFence(out.replace(/\s+$/, ''), text);
     };
     try {
         return await withTimeout(consume(), REQUEST_TIMEOUT_MS, 'Language model request');

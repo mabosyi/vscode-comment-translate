@@ -64,6 +64,13 @@ describe('buildTranslatePrompt', () => {
     test('falls back to the raw code for an unknown language', () => {
         expect(buildTranslatePrompt('x', 'xx-YY')).toContain('into xx-YY');
     });
+
+    test('forbids merging, splitting, reordering or dropping lines and keeps untranslatable lines', () => {
+        const prompt = buildTranslatePrompt('a\nb', 'id');
+
+        expect(prompt).toContain('Never merge, split, reorder or drop a line');
+        expect(prompt).toContain('a line that needs no translation is repeated unchanged');
+    });
 });
 
 describe('resolveModel', () => {
@@ -107,6 +114,31 @@ describe('LanguageModelTranslate.translate', () => {
     test('blank input skips the model lookup', async () => {
         expect(await new LanguageModelTranslate().translate(' ', { to: 'id' })).toBe('');
         expect(mockSelectChatModels).not.toHaveBeenCalled();
+    });
+});
+
+describe('translateWithModel code fence handling', () => {
+    const run = (text: string, reply: string[]) =>
+        translateWithModel(fakeModel('gpt-4o', 'copilot', reply) as never, text, 'id');
+
+    test('strips one fence wrapped around the whole output', async () => {
+        expect(await run('使能中断\n清除标志位', ['```text\n', 'Aktifkan interupsi\n', 'Hapus flag\n', '```\n']))
+            .toBe('Aktifkan interupsi\nHapus flag');
+        expect(await run('使能中断', ['```\nAktifkan interupsi\n```'])).toBe('Aktifkan interupsi');
+    });
+
+    test('keeps the output when the input itself contains a fence', async () => {
+        expect(await run('用法:\n```\nfoo()\n```', ['```\nfoo()\n```\n'])).toBe('```\nfoo()\n```');
+    });
+
+    test('keeps the output when the fence is on one side only', async () => {
+        expect(await run('使能中断', ['```\nAktifkan interupsi'])).toBe('```\nAktifkan interupsi');
+        expect(await run('使能中断', ['Aktifkan interupsi\n```'])).toBe('Aktifkan interupsi\n```');
+    });
+
+    test('keeps an inline fence and a lone fence line', async () => {
+        expect(await run('使能中断', ['```Aktifkan interupsi```'])).toBe('```Aktifkan interupsi```');
+        expect(await run('使能中断', ['```\n'])).toBe('```');
     });
 });
 

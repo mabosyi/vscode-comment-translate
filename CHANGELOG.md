@@ -20,6 +20,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 * CRLF line endings: fenced code blocks in Markdown files with CRLF line endings are no longer translated in the preview, and a trailing `\r` no longer leaks into comment token text.
 * Google source switches between the `gtx` and `at` clients when one is throttled (HTTP 429) instead of failing; if both are throttled it still fails, now within about 1 s instead of about 4.5 s.
 * Markdown Translate Preview no longer corrupts URLs on lines that mix text with links or inline HTML (a short translated piece such as `:` or `.` replaced the first matching character in the line, often inside an `href`), and a translation containing `$&` or `$'` no longer produces duplicated text (upstream #309).
+* Language model source: the prompt now forbids merging, splitting, reordering or dropping lines (a line that needs no translation is repeated unchanged), and a code fence the model wraps around its whole answer is removed (unless the comment itself contains a fence).
 
 ### Planned
  * 独立Pannel
