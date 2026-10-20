@@ -26,7 +26,8 @@ jest.mock('../../../src/translate/LanguageModelTranslate', () => ({ LanguageMode
 jest.mock('../../../src/translate/DeepLTranslate', () => ({ DeepLTranslate: class {} }));
 
 import { ExtensionContext } from 'vscode';
-import { cachedTranslate, initTranslate, translateManager } from '../../../src/translate/manager';
+import * as configuration from '../../../src/configuration';
+import { cachedTranslate, getFallbackSources, initTranslate, translateManager } from '../../../src/translate/manager';
 
 describe('cachedTranslate', () => {
     let translate: jest.Mock;
@@ -52,5 +53,20 @@ describe('cachedTranslate', () => {
         expect(await cachedTranslate('清除挂起标志位')).toBe('');
         expect(await cachedTranslate('清除挂起标志位')).toBe('Bersihkan flag tertunda');
         expect(translate).toHaveBeenCalledTimes(2);
+    });
+});
+
+// getFallbackSources guards the raw settings.json value (trust boundary).
+describe('getFallbackSources', () => {
+    afterEach(() => jest.restoreAllMocks());
+
+    test('keeps only string ids from an array', () => {
+        jest.spyOn(configuration, 'getConfig').mockReturnValue(['Copilot', 3, 'Bing']);
+        expect(getFallbackSources()).toEqual(['Copilot', 'Bing']);
+    });
+
+    test('returns an empty list for a non-array value', () => {
+        jest.spyOn(configuration, 'getConfig').mockReturnValue('Bing');
+        expect(getFallbackSources()).toEqual([]);
     });
 });

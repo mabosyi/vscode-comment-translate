@@ -1,6 +1,7 @@
 import { extensions } from "vscode";
 import { ITranslate, TranslateManager } from "comment-translate-manager";
 import { createFallbackTranslate, FallbackMember } from "./FallbackTranslate";
+import { outputChannel } from "../extension";
 
 export interface ITranslateExtensionConfig extends ITranslateConfig {
     extensionId: string;
@@ -119,7 +120,7 @@ export class TranslateExtensionProvider {
     }
 
     showError(msg: string) {
-        console.log(msg);
+        outputChannel.appendLine(msg);
     }
 
     async switchTranslate(id: string) {

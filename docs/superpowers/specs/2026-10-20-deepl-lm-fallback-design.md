@@ -131,10 +131,10 @@ Key sumber built-in tetap `Copilot`, jadi setting `commentTranslate.source = "Co
 `src/translate/translateExtension.ts`, method baru `applySources(primary: string, fallbacks: string[])`:
 
 1. `ids = dedupe([primary, ...fallbacks])` dengan string kosong dibuang.
-2. Bila `ids.length === 1`, atau ada id yang tidak ditemukan sebagai built-in di `_translateConfig` (extensionId `'BuildIn'` dengan `ctor`), panggil `switchTranslate(primary)` seperti sekarang. Untuk kasus id non-built-in, tulis satu baris log bahwa `fallbackSources` v1 hanya mendukung sumber built-in.
+2. Bila `ids.length === 1`, atau ada id yang tidak ditemukan sebagai built-in di `_translateConfig` (extensionId `'BuildIn'` dengan `ctor`), panggil `switchTranslate(primary)` seperti sekarang. Untuk kasus id non-built-in, tulis satu baris log ke output channel "Comment Translate" (lewat `showError`) bahwa `fallbackSources` v1 hanya mendukung sumber built-in.
 3. Selain itu, daftarkan `createFallbackTranslate(members)` dengan key `chain:${ids.join('>')}` lalu `setSource(key)`. Jalur ini sinkron, jadi tidak ada race dengan aktivasi ekstensi. Key berubah setiap kali urutan berubah, sehingga `setSource` selalu membuat instance baru.
 
-`applySources` mengembalikan translator aktif yang dihasilkan `setSource` atau `switchTranslate`, atau nilai falsy bila tidak ada sumber yang bisa dipasang. `init(source)` memanggil `applySources(source, getConfig('fallbackSources', []))` dan, bila hasilnya falsy, tetap jatuh ke `switchTranslate('Google')` seperti sekarang.
+`applySources` mengembalikan translator aktif yang dihasilkan `setSource` atau `switchTranslate`, atau nilai falsy bila tidak ada sumber yang bisa dipasang. `init(source)` memanggil `applySources(source, getFallbackSources())` dan, bila hasilnya falsy, tetap jatuh ke `switchTranslate('Google')` seperti sekarang. `getFallbackSources()` (di `manager.ts`) membaca nilai mentah `settings.json` lalu membuang nilai non-array dan entri non-string, supaya isi pengaturan yang salah tipe tidak melempar error.
 
 `src/translate/manager.ts`:
 - tambah `{ title: 'DeepL translate', ctor: DeepLTranslate, translate: 'DeepL' }` ke `buildInTranslate`;

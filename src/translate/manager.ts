@@ -107,12 +107,21 @@ export function initTranslate(context: ExtensionContext) {
 
     // Re-apply the primary source and fallback chain on every change, including manual
     // settings.json edits. See note above regarding pendingTranslateTasks.
+    // The promise is handled here because onConfigChange discards it: a rejection
+    // (third-party extension failing to activate) or a falsy result is written to the output channel.
     const applyConfiguredSources = () => {
         sessionTranslateCache.clear();
-        return translateExtensionProvider.applySources(
-            getConfig<string>('source', ''),
-            getFallbackSources(),
-        );
+        const source = getConfig<string>('source', '');
+        translateExtensionProvider.applySources(source, getFallbackSources())
+            .then((translator) => {
+                if (!translator) {
+                    translateExtensionProvider.showError(`Can not switch translate source to '${source}'.`);
+                }
+            })
+            .catch((e) => {
+                translateExtensionProvider.showError(
+                    `Can not switch translate source to '${source}': ${e instanceof Error ? e.message : String(e)}`);
+            });
     };
     onConfigChange('source', applyConfiguredSources);
     onConfigChange('fallbackSources', applyConfiguredSources);
