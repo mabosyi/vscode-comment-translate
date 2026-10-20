@@ -18,6 +18,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 * A source that merges or splits comment lines (Bing and Google can return a multi-line comment as one line) no longer drops the comment markers (`*`, `//`, `"""`) or leaves the browse and immersive views empty from the second line on: the translation is cut back into one line per source line.
 * Settings changed by commands (target language, translate source, multi-line merge, hover, browse mode) are now saved to the user profile instead of the workspace, and a stale workspace value is removed so it cannot hide the new one. Previously "Change translate source" updated only the workspace, and failed without an open folder.
 * CRLF line endings: fenced code blocks in Markdown files with CRLF line endings are no longer translated in the preview, and a trailing `\r` no longer leaks into comment token text.
+* Google source switches between the `gtx` and `at` clients when one is throttled (HTTP 429) instead of failing.
 * Markdown Translate Preview no longer corrupts URLs on lines that mix text with links or inline HTML (a short translated piece such as `:` or `.` replaced the first matching character in the line, often inside an `href`), and a translation containing `$&` or `$'` no longer produces duplicated text (upstream #309).
 
 ### Planned

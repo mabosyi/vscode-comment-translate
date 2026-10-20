@@ -14,6 +14,14 @@ interface IGetToken {
     }>;
 }
 
+// ponytail: 'gtx' and 'at' are unofficial client values of the translate_a/single endpoint, and Google may throttle or block either at any time.
+// Google throttles each client value separately, and which one is throttled changes over time.
+// Measured 2026-10-20: gtx 0/10 OK and at 10/10 OK (earlier), then gtx 6/6 OK and at 0/6 OK, interleaved (later).
+// Both return the same res[0] shape, so the parser is unchanged. On HTTP 429 we rotate to the next client once per request.
+// Upgrade path: add more client values here, or a setting.
+const GOOGLE_CLIENTS = ['gtx', 'at'];
+// Index of the client that last answered; the next call starts there.
+let googleClientIndex = 0;
 
 export class GoogleTranslate extends BaseTranslate {
     override readonly maxLen= 500;
@@ -21,31 +29,44 @@ export class GoogleTranslate extends BaseTranslate {
         let tld = getConfig<string>('googleTranslate.tld', 'com');
         let mirror = getConfig<string>('googleTranslate.mirror', '');
         let token = await GoogleToken.get(content, { tld, mirror });
-        let url = 'https://translate.google.' + tld + '/translate_a/single';
+        let baseUrl = 'https://translate.google.' + tld + '/translate_a/single';
         if (mirror !== "") {
-            url = mirror + '/translate_a/single';
+            baseUrl = mirror + '/translate_a/single';
         }
-        let data: any = {
-            client: 'gtx',
-            sl: from,
-            tl: to,
-            hl: to,
-            dt: ['at', 'bd', 'ex', 'ld', 'md', 'qca', 'rw', 'rm', 'ss', 't'],
-            ie: 'UTF-8',
-            oe: 'UTF-8',
-            otf: 1,
-            ssel: 0,
-            tsel: 0,
-            kc: 7,
-            q: content
-        };
-        data[token.name] = token.value;
-        url = url + '?' + querystring.stringify(data);
-        let res:any = await got(url, {
-            timeout: {request:10000}, headers: {
-                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36'
+        let res: any;
+        for (let attempt = 1; ; attempt++) {
+            let data: any = {
+                client: GOOGLE_CLIENTS[googleClientIndex],
+                sl: from,
+                tl: to,
+                hl: to,
+                dt: ['at', 'bd', 'ex', 'ld', 'md', 'qca', 'rw', 'rm', 'ss', 't'],
+                ie: 'UTF-8',
+                oe: 'UTF-8',
+                otf: 1,
+                ssel: 0,
+                tsel: 0,
+                kc: 7,
+                q: content
+            };
+            data[token.name] = token.value;
+            let url = baseUrl + '?' + querystring.stringify(data);
+            try {
+                // retry.limit 0: switch client at once on 429 instead of got's backoff retries.
+                res = await got(url, {
+                    timeout: {request:10000}, retry: { limit: 0 }, headers: {
+                        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36'
+                    }
+                }).json();
+                break;
+            } catch (e: any) {
+                // Rotate only on 429 and only while another client is left; anything else is rethrown.
+                if (e?.response?.statusCode !== 429 || attempt >= GOOGLE_CLIENTS.length) {
+                    throw e;
+                }
+                googleClientIndex = (googleClientIndex + 1) % GOOGLE_CLIENTS.length;
             }
-        }).json();
+        }
 
         let sentences = res[0];
         if (!sentences || !(sentences instanceof Array)) {
