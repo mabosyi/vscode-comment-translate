@@ -116,6 +116,13 @@ describe("restoreInlinePlaceholders", () => {
         const restored = restoreInlinePlaceholders(cleaned, entries);
         expect(restored).toBe(original);
     });
+
+    it("should restore originals that contain '$' replacement patterns literally", () => {
+        const original = "Use `$&` and `$'` and `$$` here";
+        const { cleaned, entries } = replaceInlinePlaceholders(original);
+        const restored = restoreInlinePlaceholders(cleaned, entries);
+        expect(restored).toBe(original);
+    });
 });
 
 // ── Line parsing ─────────────────────────────────────────────────────────
@@ -1219,7 +1226,7 @@ describe("translateMarkdownDocument keeps non-translatable inline parts intact",
         expect(result).toBe(`${translated}\`code\`${translated}`);
     });
 
-    it("keeps '$&' literal in bold-initial lines and list items too", async () => {
+    it("keeps '$&' literal in list items", async () => {
         const source = "- Run `npm test` before the release.";
 
         const result = await translateMarkdownDocument(source, async (text) =>
@@ -1228,4 +1235,38 @@ describe("translateMarkdownDocument keeps non-translatable inline parts intact",
 
         expect(result).toBe("- $&`npm test`$&");
     });
+
+    it("keeps '$&' literal in bold-initial lines", async () => {
+        // "**T**his ..." is stripped to "This ..." before parsing; the translated
+        // first letter is re-wrapped in ** afterwards.
+        const source = "**T**his uses `code` today.";
+
+        const result = await translateMarkdownDocument(source, async (text) =>
+            text.split("\n").map(() => "Tx $&").join("\n")
+        );
+
+        expect(result).toBe("**T**x $&`code`Tx $&");
+    });
+
+    // Regression: parseInlineSegments synthesizes some non-translatable segments
+    // (the `*` markers of `_em_`, the `[` and `](href)` around an autolink or a
+    // bare URL) that are not in the source. They must not match a later, unrelated
+    // spot and make reconstructInlineContent skip text that still needs translating.
+    describe("unmatched synthesized markers", () => {
+        // Wraps every translated piece in <...> so untranslated text stays visible.
+        const wrap = async (text: string): Promise<string> =>
+            text.split("\n").map((line) => `<${line}>`).join("\n");
+
+        it.each([
+            ["underscore em followed by strong", "Use _this_ and **that** please", "<Use >_<this>_< and >**<that>**< please>"],
+            ["strong, underscore em, strong", "**bold** then _it_ then **bold2** end", "**<bold>**< then >_<it>_< then >**<bold2>**< end>"],
+            ["bare URL followed by brackets", "Docs: https://x.com (see [1]) done", "<Docs: ><https://x.com>< (see [1]) done>"],
+            ["bare URL followed by a real link", "Visit https://a.com and [docs](https://b.com)", "<Visit ><https://a.com>< and >[<docs>](https://b.com)"],
+            ["repeated identical code span and text", "a `x` a `x` a", "<a >`x`< a >`x`< a>"],
+            ["repeated identical strong", "go **a** and **a** and a", "<go >**<a>**< and >**<a>**< and a>"],
+        ])("keeps translating text after %s", async (_name, source, expected) => {
+            expect(await translateMarkdownDocument(source, wrap)).toBe(expected);
+        });
+    });
+
 });

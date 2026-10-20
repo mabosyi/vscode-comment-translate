@@ -92,7 +92,9 @@ export function restoreInlinePlaceholders(text: string, entries: PlaceholderEntr
     let result = text;
     for (let i = entries.length - 1; i >= 0; i--) {
         const { placeholder, original } = entries[i];
-        result = result.replace(placeholder, original);
+        // Function replacer: a string replacement would expand `$&`, `$'`, `$$`
+        // sequences that occur inside the original text.
+        result = result.replace(placeholder, () => original);
     }
     return result;
 }
@@ -324,17 +326,22 @@ function extractInlineTranslatableText(content: string): {
  * Reconstruct inline content by replacing translatable segments with
  * translated text parts.
  *
- * Segments are in source order and each `raw` is a verbatim slice of
- * `originalContent`, so the content is rebuilt left to right with a moving
- * cursor: every segment (translatable or not) is located with
- * `indexOf(raw, cursor)`, the text before it is copied, and the translated
+ * Segments are in source order, so the content is rebuilt left to right with a
+ * moving cursor: the text before the segment is copied, then the translated
  * part (or the untouched raw text) is appended. `String.replace` is avoided on
  * purpose: it hits the first occurrence anywhere in the line (a short segment
  * such as ":" would match inside a non-translatable href) and it interprets
  * `$&`, `$'`, `` $` `` and `$$` in the replacement text.
  *
- * A segment that cannot be found after the cursor is left out: its translated
- * part is consumed and the original text stays as is.
+ * How a segment is located:
+ * - translatable: first occurrence at or after the cursor (`indexOf`);
+ * - non-translatable: only exactly at the cursor. Not every one is a verbatim
+ *   slice of the source (see parseInlineSegments), and a forward search would
+ *   let such a segment match a later, unrelated spot and skip text that still
+ *   needs translating. Skipping one is lossless: the gap is copied later.
+ *
+ * A segment that is not found is left out: its translated part is consumed
+ * and the original text stays as is.
  */
 function reconstructInlineContent(
     originalContent: string,
@@ -348,7 +355,14 @@ function reconstructInlineContent(
     for (const segment of segments) {
         const hasPart = segment.translatable && partIndex < translatedParts.length;
         const translatedPart = hasPart ? translatedParts[partIndex++] : segment.raw;
-        const start = originalContent.indexOf(segment.raw, cursor);
+        // Translatable text is searched forward (it may follow an unmatched
+        // marker). Non-translatable segments must sit exactly at the cursor: some
+        // are synthesized by parseInlineSegments (the `*` markers of `_em_`, the
+        // `[` / `](href)` around an autolink) and would otherwise match a later,
+        // unrelated spot and skip text that still needs translating.
+        const start = segment.translatable
+            ? originalContent.indexOf(segment.raw, cursor)
+            : (originalContent.startsWith(segment.raw, cursor) ? cursor : -1);
         if (start === -1) {
             continue;
         }
