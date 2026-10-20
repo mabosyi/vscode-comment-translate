@@ -54,6 +54,7 @@ The extension provides translation or replacement commands for various scenarios
 - **Translate Variable Naming**: Translate the current descriptive word and provide named variables `ctrl+shift+n`
 - **Translation and Replacement**: Translate selected content and replace it at the current location `ctrl+shift+t`
 - **Copilot Quick Translation**: Translate selected content or clipboard content in GitHub Copilot Chat `ctrl+shift+y`
+- **Translate All CJK Comments in File**: Translate and replace only the Chinese, Japanese or Korean comments in the current file (editor right-click menu > Comment Translate, or the command palette)
 
 ## Translation Services
 

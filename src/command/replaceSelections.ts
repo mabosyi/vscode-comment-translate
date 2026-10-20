@@ -31,17 +31,16 @@ export async function replaceRange({ uri, text, range }: { uri: string, text: st
         }
     });
     editor.setDecorations(decoration, [range]);
-    setTimeout(() => {
-        decoration.dispose();
-    }, 500);
     try {
         editor.revealRange(range);
-        editor.edit(builder => {
+        // Wait for the edit so the loading icon stays until the text is replaced.
+        await editor.edit(builder => {
             text && builder.replace(new Selection(new Position(range.start.line, range.start.character), new Position(range.end.line, range.end.character)), text);
         });
     } catch (e: any) {
-        decoration.dispose();
         outputChannel.append(e.toString());
+    } finally {
+        decoration.dispose();
     }
 
 }
@@ -240,21 +239,18 @@ export async function replaceSelections() {
         }
     });
     editor.setDecorations(decoration, editor.selections);
-    let beginTime = Date.now();
     try {
         let results = await Promise.all(translates);
-        //最少提示1秒钟
-        setTimeout(() => {
-            decoration.dispose();
-        }, 1000 - (Date.now() - beginTime));
-        editor.edit(builder => {
+        // Wait for the edit so the loading icon stays until the text is replaced.
+        await editor.edit(builder => {
             results.forEach(({ translatedText, selection }) => {
                 translatedText && builder.replace(selection, translatedText);
             });
         });
     } catch (e: any) {
-        decoration.dispose();
         outputChannel.append(e.toString());
+    } finally {
+        decoration.dispose();
     }
 }
 

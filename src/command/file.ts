@@ -2,8 +2,10 @@ import { commands, env, ProgressLocation, Selection, window } from "vscode";
 import { getConfig, selectTargetLanguage } from "../configuration";
 import { ctx, outputChannel } from "../extension";
 // import { client } from "../extension";
+import { ICommentBlock } from "../interface";
 import { compileBlock } from "../syntax/compile";
 import { createComment } from "../syntax/Comment";
+import { containsCJK } from "../util/cjk";
 
 
 export async function selectAllForType(type = 'comment') {
@@ -41,7 +43,17 @@ export async function translateAllComment() {
     translateAllForType('comment');
 }
 
-export async function translateAllForType(type = 'comment') {
+// Translate and replace only the comments written in Chinese, Japanese or Korean.
+export async function translateAllCJKComment() {
+    return translateAllForType('comment', block => containsCJK(block.comment), 'No CJK comments found in this file.');
+}
+
+/**
+ * Translates every block of `type` in the active editor and replaces it in place.
+ * `filter` keeps only the blocks it accepts; when none is left, `noMatchMessage` (if given)
+ * is shown and the document is not changed.
+ */
+export async function translateAllForType(type = 'comment', filter?: (block: ICommentBlock) => boolean, noMatchMessage?: string) {
     let editor = window.activeTextEditor;
 
     window.withProgress({
@@ -58,9 +70,12 @@ export async function translateAllForType(type = 'comment') {
             progress.report({ message: 'Parsing' });
             let comment = await createComment();
             let blocks = await comment.getAllComment(editor.document, type, editor.selections[0]);
+            if (blocks && filter) blocks = blocks.filter(filter);
 
-
-            if (!blocks || blocks.length === 0) return;
+            if (!blocks || blocks.length === 0) {
+                if (noMatchMessage) window.showInformationMessage(noMatchMessage);
+                return;
+            }
 
             let targetLanguage: string;
             let selectTarget = getConfig<boolean>('selectTargetLanguageWhenReplacing');
@@ -98,22 +113,19 @@ export async function translateAllForType(type = 'comment') {
                 }
             });
             editor.setDecorations(decoration, selections);
-            let beginTime = Date.now();
             try {
                 let results = await Promise.all(translates);
-                //最少提示1秒钟
-                setTimeout(() => {
-                    decoration.dispose();
-                }, 1000 - (Date.now() - beginTime));
-                editor.edit(builder => {
+                // Wait for the edit so the loading icon stays until the text is replaced.
+                await editor.edit(builder => {
                     results.forEach(({ translatedText }, index) => {
                         let selection = selections[index];
                         translatedText && builder.replace(selection, translatedText);
                     });
                 });
             } catch (e: any) {
-                decoration.dispose();
                 outputChannel.append(e.toString());
+            } finally {
+                decoration.dispose();
             }
 
         })

@@ -9,6 +9,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 * `commentTranslate.fallbackSources`: ordered fallback across built-in sources.
 * `Comment Translate: Clear Translation Cache` command: removes the saved translations (including results left by a fallback source or an earlier language model) so the next request translates again.
 * `commentTranslate.hover.showToolbar` (default `true`): set to `false` to hide the Comment Translate toolbar (replace, merge lines, add selection, change source) at the top of translation hovers; the translation stays visible.
+* `Comment Translate: Translate All CJK Comments in File` command (editor submenu and command palette): translates and replaces only the comments that contain Chinese, Japanese or Korean characters; if there are none it shows a message and changes nothing.
 
 ### Fixed
 * Bing source: bump `bing-translate-api` to 4.3.0 (2.10.0 failed every request with 401).
@@ -22,6 +23,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 * Google source switches between the `gtx` and `at` clients when one is throttled (HTTP 429) instead of failing; if both are throttled it still fails, now within about 1 s instead of about 4.5 s.
 * Markdown Translate Preview no longer corrupts URLs on lines that mix text with links or inline HTML (a short translated piece such as `:` or `.` replaced the first matching character in the line, often inside an `href`), and a translation containing `$&` or `$'` no longer produces duplicated text (upstream #309).
 * Language model source: the prompt now forbids merging, splitting, reordering or dropping lines (a line that needs no translation is repeated unchanged), and a code fence the model wraps around its whole answer is removed (unless the comment itself contains a fence).
+* The loading icon shown while `Translate and replace selections`, the hover replace button and the `Translate all ... in file` commands run now disappears when the edit finishes (or fails), instead of after a fixed 500 ms / 1 s timer that was unrelated to the edit.
 
 ### Planned
  * 独立Pannel

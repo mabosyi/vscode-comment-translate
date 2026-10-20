@@ -31,7 +31,7 @@ activate() src/extension.ts
  │         applySources(primary, fallbacks): 1 id atau ada id non-built-in → switchTranslate(ids[0]);
  │           semua built-in → FallbackTranslate terdaftar dengan key `chain:A>B>C` (coba anggota berurutan)
  ├─ createComment()          syntax/Comment.ts → TextMateService (vscode-textmate + oniguruma wasm) → CommentParse
- ├─ registerCommands()       command/command.ts (24 command → command/*.ts)
+ ├─ registerCommands()       command/command.ts (25 command → command/*.ts)
  ├─ registerHover()          languageFeature/hover.ts ('*' HoverProvider: komentar/seleksi + hover.content + diagnostics)
  ├─ registerCompletion()     languageFeature/completion.ts (nameVariable → change-case)
  ├─ registerChatParticipant() copilot/translate.ts (@translate, /word, /var; vscode.lm gpt-4o)
