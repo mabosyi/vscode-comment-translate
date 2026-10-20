@@ -139,7 +139,7 @@ Key sumber built-in tetap `Copilot`, jadi setting `commentTranslate.source = "Co
 `src/translate/manager.ts`:
 - tambah `{ title: 'DeepL translate', ctor: DeepLTranslate, translate: 'DeepL' }` ke `buildInTranslate`;
 - ganti `CopilotTranslate` dengan `LanguageModelTranslate`;
-- listener `source` dan `fallbackSources` membersihkan session cache lalu memanggil `applySources`. Dengan begitu edit manual `settings.json` juga ikut berpindah sumber. Command `changeTranslateSource` tidak diubah, karena ia sudah menulis `source` setelah berhasil;
+- listener `source` dan `fallbackSources` membersihkan session cache lalu memanggil `applySources`. Dengan begitu edit manual `settings.json` juga ikut berpindah sumber. Command `changeTranslateSource` memanggil `applySources(target, fallbackSources)` alih-alih `switchTranslate`. Memilih ulang sumber yang sama tidak memicu event konfigurasi, jadi tanpa perubahan ini rantai fallback akan diganti sumber tunggal sampai reload.
 - listener `languageModel.id` membersihkan session cache.
 
 `src/command/command.ts` mendaftarkan dua command baru. `package.json` mendapat:

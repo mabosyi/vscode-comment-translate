@@ -4,6 +4,7 @@ import { env, ExtensionContext } from "vscode";
 import { ITranslateConfig, TranslateExtensionProvider } from "./translateExtension";
 import { GoogleTranslate } from "./GoogleTranslate";
 import { BingTranslate } from "./BingTranslate";
+import { DeepLTranslate } from "./DeepLTranslate";
 import { detectLanguage } from "../lang";
 import { LanguageModelTranslate } from "./LanguageModelTranslate";
 import { TranSmartTranslate } from "./TranSmartTranslate";
@@ -73,12 +74,19 @@ export async function cachedTranslate(text: string, opts?: ITranslateOptions): P
     return task;
 }
 
+// Raw settings.json value: tolerate a non-array or non-string entries instead of throwing.
+export function getFallbackSources(): string[] {
+    const value = getConfig<unknown>('fallbackSources', []);
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
+}
+
 export function initTranslate(context: ExtensionContext) {
 
     let userLanguage = getUserLanguage();
     const targetLanguage = getConfig('targetLanguage', userLanguage);
     const sourceLanguage = getConfig('sourceLanguage', 'auto');
-    // 最多单次可以翻译10000字符。 内部会分拆请求翻译服务。
+    // At most maxTranslationLength characters per call; TranslateManager splits them into
+    // chunks sized by the active source's maxLen.
     translateManager = new TranslateManager(context.workspaceState, getConfig<number>('maxTranslationLength', 10000), { from: sourceLanguage, to: targetLanguage });
     onConfigChange('maxTranslationLength', (maxLen: number) => {
         translateManager.maxLen = maxLen;
@@ -96,10 +104,21 @@ export function initTranslate(context: ExtensionContext) {
         sessionTranslateCache.clear();
         // See note above regarding pendingTranslateTasks.
     });
-    onConfigChange('source', () => {
+
+    // Re-apply the primary source and fallback chain on every change, including manual
+    // settings.json edits. See note above regarding pendingTranslateTasks.
+    const applyConfiguredSources = () => {
         sessionTranslateCache.clear();
-        // See note above regarding pendingTranslateTasks.
-    });
+        return translateExtensionProvider.applySources(
+            getConfig<string>('source', ''),
+            getFallbackSources(),
+        );
+    };
+    onConfigChange('source', applyConfiguredSources);
+    onConfigChange('fallbackSources', applyConfiguredSources);
+    // ponytail: only the session cache is cleared; workspaceState keeps results from the
+    // previous model under the 'Copilot' key. Add a clear-cache command if stale output matters.
+    onConfigChange('languageModel.id', () => sessionTranslateCache.clear());
 
     const buildInTranslate: ITranslateConfig[] = [{
         title: 'Google translate',
@@ -112,6 +131,11 @@ export function initTranslate(context: ExtensionContext) {
         translate: 'Bing'
     },
     {
+        title: 'DeepL translate',
+        ctor: DeepLTranslate,
+        translate: 'DeepL'
+    },
+    {
         title: 'VS Code Language Model (Copilot, ...)',
         ctor: LanguageModelTranslate,
         translate: 'Copilot'
@@ -122,7 +146,10 @@ export function initTranslate(context: ExtensionContext) {
         translate: 'TranSmart'
     }];
     translateExtensionProvider = new TranslateExtensionProvider(translateManager, buildInTranslate);
-    translateExtensionProvider.init(getConfig<string>('source', ''));
+    translateExtensionProvider.init(
+        getConfig<string>('source', ''),
+        getFallbackSources(),
+    );
 
     return translateManager;
 }

@@ -2,7 +2,7 @@ import { window } from "vscode";
 import { getConfiguration, selectTargetLanguage, selectTranslateSource } from "../configuration";
 import { outputChannel } from "../extension";
 import { commentDecorationManager } from "../languageFeature/decoration";
-import { translateExtensionProvider } from "../translate/manager";
+import { getFallbackSources, translateExtensionProvider } from "../translate/manager";
 
 // 更改目标语言命令
 export async function changeTargetLanguage() {
@@ -16,7 +16,7 @@ export async function changeTargetLanguage() {
 export async function changeTranslateSource() {
     let targetSource = await selectTranslateSource();
     if (targetSource) {
-        let success = await translateExtensionProvider.switchTranslate(targetSource);
+        let success = await translateExtensionProvider.applySources(targetSource, getFallbackSources());
         if (success) {
             const configuration = getConfiguration();
             await configuration.update('source', targetSource);

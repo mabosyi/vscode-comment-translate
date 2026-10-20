@@ -148,6 +148,16 @@
                 "title": "%commentTranslate.command.openMarkdownTranslatePreview%",
                 "icon": "$(symbol-null)",
                 "category": "Comment Translate"
+            },
+            {
+                "command": "commentTranslate.setDeepLApiKey",
+                "title": "%commentTranslate.command.setDeepLApiKey%",
+                "category": "Comment Translate"
+            },
+            {
+                "command": "commentTranslate.selectLanguageModel",
+                "title": "%commentTranslate.command.selectLanguageModel%",
+                "category": "Comment Translate"
             }
         ],
         "keybindings": [
@@ -828,6 +838,21 @@
                         "default": "Google",
                         "order": 27,
                         "description": "%commentTranslate.configuration.source%"
+                    },
+                    "commentTranslate.fallbackSources": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "default": [],
+                        "order": 27,
+                        "markdownDescription": "%commentTranslate.configuration.fallbackSources%"
+                    },
+                    "commentTranslate.languageModel.id": {
+                        "type": "string",
+                        "default": "",
+                        "order": 27,
+                        "markdownDescription": "%commentTranslate.configuration.languageModelId%"
                     },
                     "commentTranslate.maxTranslationLength": {
                         "type": "number",

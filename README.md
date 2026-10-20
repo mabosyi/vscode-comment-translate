@@ -62,6 +62,8 @@ The extension supports the following translation services:
   - **Note**: Requires a network connection, some users may need a proxy. If encountering network issues, it is recommended to use Bing.
 - **Bing Translate**: Built-in, free version.
 - **AliCloud Translate**: Built-in, requires configuration of accessKeyId & accessKeySecret.
+- **DeepL**: Built-in, requires an API key (Free keys end with `:fx`). Set it with `Comment Translate: Set DeepL API Key`; the key is stored in VS Code SecretStorage, not in settings.
+- **VS Code Language Model** (`Copilot` source): Built-in, uses any chat model registered in VS Code, such as GitHub Copilot models or other providers. Pick one with `Comment Translate: Select Language Model`.
 
 Third-party translation services can be found by searching for `@tag:translateSource` in the plugin market. Users can choose the desired translation service through the plugin configuration or expand it by customizing the translation service. [More Links](https://github.com/intellism/vscode-comment-translate/wiki/Translation-Service)
 
@@ -73,6 +75,8 @@ Third-party translation services can be found by searching for `@tag:translateSo
 * `commentTranslate.multilineMerge`: Merge multiline comments
 * `commentTranslate.targetLanguage`: Translation target language, uses the local VSCode language if not set (quickly set through status)
 * `commentTranslate.source`: Translation service source configuration. It is recommended to set it through commands. Supports plugin extensions for translation service sources. [example](https://github.com/intellism/deepl-translate)
+* `commentTranslate.fallbackSources`: Built-in sources tried in order when the main source fails, for example `["Copilot", "Bing"]`
+* `commentTranslate.languageModel.id`: Model used by the `Copilot` source; set it with `Comment Translate: Select Language Model`
 * `commentTranslate.maxTranslationLength`: Maximum translation length configuration to avoid excessive charges for long character translations
 * `commentTranslate.browse.enabled`: Enable/disable project immersive browsing translation function
 * `commentTranslate.markdown.scopeFallback`: Enable/disable TextMate scope fallback after Markdown fenced-code detection

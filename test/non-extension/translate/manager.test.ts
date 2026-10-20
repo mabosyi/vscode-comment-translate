@@ -23,6 +23,7 @@ jest.mock('../../../src/translate/translateExtension', () => ({
 jest.mock('../../../src/translate/GoogleTranslate', () => ({ GoogleTranslate: class {} }));
 jest.mock('../../../src/translate/TranSmartTranslate', () => ({ TranSmartTranslate: class {} }));
 jest.mock('../../../src/translate/LanguageModelTranslate', () => ({ LanguageModelTranslate: class {} }));
+jest.mock('../../../src/translate/DeepLTranslate', () => ({ DeepLTranslate: class {} }));
 
 import { ExtensionContext } from 'vscode';
 import { cachedTranslate, initTranslate, translateManager } from '../../../src/translate/manager';
