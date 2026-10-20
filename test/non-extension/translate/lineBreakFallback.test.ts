@@ -55,6 +55,22 @@ describe('normalizeTranslatedLines', () => {
         expect(normalizeTranslatedLines(['a', '', 'b'], 'A\nB')).toEqual(['A', '', 'B']);
     });
 
+    it.each([['\n'], ['\r\n']])('ignores a trailing newline (%j) when counting translated lines', (eol) => {
+        // Uneven line lengths: redistribution would flatten the text and cut it at other places.
+        const lines = ['Satu', 'Dua tiga empat lima enam', 'Tujuh'];
+
+        // One translated line per non-blank source line.
+        expect(normalizeTranslatedLines(['aaaa', 'bbbb', 'cccc'], lines.join(eol) + eol)).toEqual(lines);
+        // As many translated lines as source lines, blank ones included.
+        expect(normalizeTranslatedLines(['aaaa', '', 'bbbb', 'cccc'], [lines[0], '', lines[1], lines[2]].join(eol) + eol))
+            .toEqual([lines[0], '', lines[1], lines[2]]);
+    });
+
+    it('keeps a trailing blank line that mirrors a trailing blank source line', () => {
+        // Four source lines, the last one blank: the translation matches line for line.
+        expect(normalizeTranslatedLines(['a', '', 'b', ''], 'A B C\n\nD\n')).toEqual(['A B C', '', 'D', '']);
+    });
+
     it('does not mistake a shorter translation of a source with blank lines for a full one', () => {
         // 4 source lines, 3 non-blank; a 3-line translation is one line per non-blank line.
         expect(normalizeTranslatedLines(['a', '', 'b', 'c'], 'A\nB\nC')).toEqual(['A', '', 'B', 'C']);

@@ -89,6 +89,9 @@ function distribute(sourceLines: string[], text: string): string[] {
  *  2. Same line count as the source (and no text on a blank source line): returned unchanged.
  *  3. Anything else (lines merged or split by the provider): all translated text is flattened and cut
  *     again into one chunk per non-blank source line, preferring breaks at whitespace or punctuation.
+ * Rules 1 and 2 are tried on the text without trailing whitespace first, because a trailing newline
+ * adds an empty last line that is not a translated line, then on the exact text (a translation that
+ * mirrors a blank last source line ends with an empty line on purpose).
  */
 export function normalizeTranslatedLines(sourceLines: string[], translatedText: string): string[] {
     const nonBlankSource = sourceLines.filter(line => !isBlank(line));
@@ -96,17 +99,20 @@ export function normalizeTranslatedLines(sourceLines: string[], translatedText: 
         return sourceLines.map(() => '');
     }
 
-    const translatedLines = translatedText.replace(/\r\n?/g, '\n').split('\n');
-    if (translatedLines.length === nonBlankSource.length) {
-        return insertBlankLines(sourceLines, translatedLines);
-    }
-    // A translation that puts text on a blank source line did not keep the source layout (callers that
-    // leave blank lines out of the request get a different count back), so it is not taken as-is.
-    const keepsBlankLines = sourceLines.every((line, i) => !isBlank(line) || isBlank(translatedLines[i] ?? ''));
-    if (translatedLines.length === sourceLines.length && keepsBlankLines) {
-        return translatedLines;
+    const normalized = translatedText.replace(/\r\n?/g, '\n');
+    const candidates = [normalized.replace(/\s+$/, ''), normalized].map(text => text.split('\n'));
+    for (const translatedLines of candidates) {
+        if (translatedLines.length === nonBlankSource.length) {
+            return insertBlankLines(sourceLines, translatedLines);
+        }
+        // A translation that puts text on a blank source line did not keep the source layout (callers that
+        // leave blank lines out of the request get a different count back), so it is not taken as-is.
+        const keepsBlankLines = sourceLines.every((line, i) => !isBlank(line) || isBlank(translatedLines[i] ?? ''));
+        if (translatedLines.length === sourceLines.length && keepsBlankLines) {
+            return translatedLines;
+        }
     }
 
-    const flattened = translatedLines.join(' ').replace(/\s+/g, ' ').trim();
+    const flattened = normalized.replace(/\s+/g, ' ').trim();
     return insertBlankLines(sourceLines, distribute(nonBlankSource, flattened));
 }

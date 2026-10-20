@@ -1,7 +1,7 @@
 // Commands that configure translate sources: store the DeepL API key in SecretStorage
 // and pick the vscode.lm model used by the 'Copilot' source.
-import { ConfigurationTarget, LanguageModelChat, lm, ProgressLocation, QuickPickItem, window } from 'vscode';
-import { getConfig, getConfiguration } from '../configuration';
+import { LanguageModelChat, lm, ProgressLocation, QuickPickItem, window } from 'vscode';
+import { getConfig, updateUserSetting } from '../configuration';
 import { ctx } from '../extension';
 import { DEEPL_SECRET_KEY } from '../translate/DeepLTranslate';
 import { translateWithModel } from '../translate/LanguageModelTranslate';
@@ -63,7 +63,8 @@ export async function selectLanguageModel() {
             { location: ProgressLocation.Notification, title: `Testing ${picked.model.name}...` },
             () => translateWithModel(picked.model, MODEL_TEST_SAMPLE, translateManager.opts.to || 'en'),
         );
-        await getConfiguration().update('languageModel.id', picked.model.id, ConfigurationTarget.Global);
+        // Also removes a stale workspace value, which would otherwise hide the new user value.
+        await updateUserSetting('languageModel.id', picked.model.id);
         window.showInformationMessage(`Language model set to ${picked.model.name}. Test: "${MODEL_TEST_SAMPLE}" -> "${result}"`);
     } catch (e) {
         window.showErrorMessage(`Language model test failed: ${e instanceof Error ? e.message : String(e)}`);

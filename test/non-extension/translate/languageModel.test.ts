@@ -127,6 +127,23 @@ describe('translateWithModel code fence handling', () => {
         expect(await run('使能中断', ['```\nAktifkan interupsi\n```'])).toBe('Aktifkan interupsi');
     });
 
+    test('strips a fence whose info string has symbols (c++, c#, objective-c)', async () => {
+        expect(await run('使能中断', ['```c++\nAktifkan interupsi\n```'])).toBe('Aktifkan interupsi');
+        expect(await run('使能中断', ['```c#\nAktifkan interupsi\n```'])).toBe('Aktifkan interupsi');
+        expect(await run('使能中断', ['```objective-c\nAktifkan interupsi\n```'])).toBe('Aktifkan interupsi');
+    });
+
+    test('strips a CRLF-wrapped fence and leaves no trailing whitespace', async () => {
+        expect(await run('使能中断', ['```text\r\nAktifkan interupsi\r\n```\r\n'])).toBe('Aktifkan interupsi');
+        expect(await run('使能中断\n清除标志位', ['```\r\nAktifkan interupsi\r\nHapus flag\r\n```']))
+            .toBe('Aktifkan interupsi\r\nHapus flag');
+    });
+
+    test('keeps an opening fence with a space or a backtick in its info string', async () => {
+        expect(await run('使能中断', ['``` c++\nAktifkan interupsi\n```'])).toBe('``` c++\nAktifkan interupsi\n```');
+        expect(await run('使能中断', ['```a`b\nAktifkan interupsi\n```'])).toBe('```a`b\nAktifkan interupsi\n```');
+    });
+
     test('keeps the output when the input itself contains a fence', async () => {
         expect(await run('用法:\n```\nfoo()\n```', ['```\nfoo()\n```\n'])).toBe('```\nfoo()\n```');
     });

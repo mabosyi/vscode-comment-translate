@@ -45,14 +45,17 @@ export async function resolveModel(id: string): Promise<LanguageModelChat> {
 
 // Some models wrap the whole answer in one code fence despite the prompt. The wrapper is removed
 // only when the source has no fence of its own (otherwise a fence in the output is real content)
-// and both the opening and closing fence lines are present. Nothing else is cleaned up.
+// and both the opening and closing fence lines are present (so a lone fence line stays). The
+// opening fence may carry any info string without spaces or backticks (text, c++, c#, objective-c).
+// Trailing whitespace is trimmed again afterwards, which also drops the "\r" of a CRLF reply.
+// Nothing else is cleaned up.
 function stripWrappingFence(output: string, input: string): string {
     if (input.includes('```')) {
         return output;
     }
     const lines = output.split('\n');
-    if (lines.length >= 2 && /^```[\w-]*\s*$/.test(lines[0]) && /^```\s*$/.test(lines[lines.length - 1])) {
-        return lines.slice(1, -1).join('\n');
+    if (lines.length >= 2 && /^```[^\s`]*\s*$/.test(lines[0]) && /^```\s*$/.test(lines[lines.length - 1])) {
+        return lines.slice(1, -1).join('\n').replace(/\s+$/, '');
     }
     return output;
 }
