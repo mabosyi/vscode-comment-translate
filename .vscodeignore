@@ -5,3 +5,8 @@ doc
 dist/**/*.js.map
 coverage
 test
+docs
+CLAUDE.md
+.superpowers
+.remember
+.gitattributes
