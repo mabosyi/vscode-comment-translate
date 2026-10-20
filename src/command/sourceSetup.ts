@@ -17,6 +17,10 @@ export async function setDeepLApiKey() {
         prompt: 'Free keys end with ":fx". Leave empty to remove the stored key.',
         password: true,
         ignoreFocusOut: true,
+        // Header-safe keys only: undici echoes an invalid header value in its error text.
+        validateInput: value => /^[\x21-\x7E]*$/.test(value.trim())
+            ? undefined
+            : 'The key may contain only printable ASCII characters without spaces.',
     });
     if (value === undefined) {
         return;
