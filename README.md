@@ -54,7 +54,7 @@ The extension provides translation or replacement commands for various scenarios
 - **Translate Variable Naming**: Translate the current descriptive word and provide named variables `ctrl+shift+n`
 - **Translation and Replacement**: Translate selected content and replace it at the current location `ctrl+shift+t`
 - **Copilot Quick Translation**: Translate selected content or clipboard content in GitHub Copilot Chat `ctrl+shift+y`
-- **Translate All CJK Comments in File**: Translate and replace only the Chinese, Japanese or Korean comments in the current file (editor right-click menu > Comment Translate, or the command palette)
+- **Translate All CJK Comments in File**: Translate and replace only the Chinese, Japanese or Korean comments in the current file (editor right-click menu > Comment Translate, or the command palette). A comment block that contains any CJK character is translated as a whole, including English lines in the same block
 
 ## Translation Services
 
@@ -73,7 +73,7 @@ Third-party translation services can be found by searching for `@tag:translateSo
 * `commentTranslate.hover.concise`: Enable/disable concise mode. Only triggers hover translation when pressing ctrl or command
 * `commentTranslate.hover.string`: Enable/disable string hover translation
 * `commentTranslate.hover.content`: Enable/disable translation of hover content
-* `commentTranslate.hover.showToolbar`: Show/hide the toolbar (replace, merge lines, change source) at the top of translation hovers; the translation itself stays visible
+* `commentTranslate.hover.showToolbar`: Show/hide the toolbar (replace, merge lines, add selection, change translate source, and the source link) at the top of translation hovers; the translation itself stays visible
 * `commentTranslate.multilineMerge`: Merge multiline comments
 * `commentTranslate.targetLanguage`: Translation target language, uses the local VSCode language if not set (quickly set through status)
 * `commentTranslate.source`: Translation service source configuration. It is recommended to set it through commands. Supports plugin extensions for translation service sources. [example](https://github.com/intellism/deepl-translate)

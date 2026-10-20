@@ -113,6 +113,8 @@
 
 **Commit:** `fix: use the Google 'at' client to avoid the throttled gtx bucket`
 
+**Catatan revisi:** desain `client=at` tunggal di atas diganti dengan rotasi `gtx`/`at` saat HTTP 429 setelah pengukuran langsung menunjukkan bucket yang kena berubah seiring waktu (commit `f2ca6ae` dan `f06cbf1`).
+
 ---
 
 ### Task 7: Prompt Language Model lebih ketat dan output dibersihkan
