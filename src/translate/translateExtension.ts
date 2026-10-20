@@ -1,5 +1,6 @@
 import { extensions } from "vscode";
 import { ITranslate, TranslateManager } from "comment-translate-manager";
+import { createFallbackTranslate, FallbackMember } from "./FallbackTranslate";
 
 export interface ITranslateExtensionConfig extends ITranslateConfig {
     extensionId: string;
@@ -51,12 +52,47 @@ export class TranslateExtensionProvider {
         });
     }
 
-    async init(source: string) {
-        const success = await this.switchTranslate(source);
-        if (!success) {
-            const defaulte = await this.switchTranslate('Google');
-            return defaulte;
+    /**
+     * Activate the configured source (and fallback chain), falling back to Google
+     * when nothing could be activated.
+     */
+    async init(source: string, fallbacks: string[] = []) {
+        const translator = await this.applySources(source, fallbacks);
+        if (!translator) {
+            return this.switchTranslate('Google');
         }
+        return translator;
+    }
+
+    /**
+     * Activate `primary`, or a fallback chain of `primary` followed by `fallbacks`.
+     * A chain is built only when every id is a built-in source; otherwise `primary`
+     * is used alone, exactly as before fallback support existed.
+     * @returns the active translator, or a falsy value when no source was activated.
+     */
+    async applySources(primary: string, fallbacks: string[] = []) {
+        const ids = [...new Set([primary, ...fallbacks].filter(Boolean))];
+        if (ids.length === 0) {
+            return null;
+        }
+        const members: FallbackMember[] = [];
+        for (const id of ids) {
+            const conf = this._translateConfig.get(id);
+            if (!conf || conf.extensionId !== 'BuildIn' || !conf.ctor) {
+                break;
+            }
+            members.push({ id, ctor: conf.ctor });
+        }
+        if (ids.length === 1 || members.length !== ids.length) {
+            if (ids.length > 1) {
+                this.showError(`fallbackSources supports built-in sources only; using '${ids[0]}' alone.`);
+            }
+            return this.switchTranslate(ids[0]);
+        }
+        // The key changes whenever the chain changes, so setSource always builds a fresh instance.
+        const key = `chain:${ids.join('>')}`;
+        this._translateManager.registry(key, createFallbackTranslate(members));
+        return this._translateManager.setSource(key);
     }
 
     getAllTransationConfig() {
