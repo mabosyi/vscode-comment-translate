@@ -15,8 +15,9 @@ const LANGUAGE_NAMES = new Map(LANGS);
 export const LM_SETUP_HINT =
     'Run "Comment Translate: Select Language Model" to choose a model and grant access.';
 
-// compile.ts re-aligns translations to comment lines only when the line count matches,
-// so the prompt pins the output to exactly one line per input line.
+// compile.ts re-aligns translations to comment lines (translate/lineBreakFallback.ts re-splits a
+// result whose line count differs), but a matching line count keeps each translated line on its own
+// source line, so the prompt pins the output to exactly one line per input line.
 export function buildTranslatePrompt(text: string, to: string): string {
     const language = LANGUAGE_NAMES.get(to) ?? to;
     const lineCount = text.split('\n').length;

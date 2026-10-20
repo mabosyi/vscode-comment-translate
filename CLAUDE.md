@@ -50,7 +50,7 @@ Subsistem & file inti:
 | Markdown | `syntax/markdownDocument.ts` (1023 baris, parser line-oriented murni), `languageFeature/markdownPreview.ts`, `translatedMarkdownFs.ts` | Preview progresif batch 5, debounce 500 ms. Browse-mode markdown ada di `decoration.ts`, bukan di sini. |
 | Hover/Browse | `languageFeature/hover.ts`, `hoverUtil.ts`, `decoration.ts`, `commentDecoration.ts`, `concise.ts`, `blockParser.ts`, `codelen.ts` | `codelen.ts` = placeholder CodeLens untuk spacing mode contrast. |
 | Commands/Copilot | `command/*.ts`, `copilot/translate.ts`, `copilot/prompt.ts` | 5 command tak ada di `contributes.commands` (4 `_`-prefix untuk link hover + `toggleEnableHover`). `command/sourceSetup.ts` = `setDeepLApiKey` + `selectLanguageModel`. |
-| Translate | `translate/*.ts`, `plugin/translateAli.ts`, `util/timeout.ts` | Ali di-expose lewat API ekstensi ini sendiri (`extendTranslate`). `FallbackTranslate.ts` = komposit rantai fallback; `util/timeout.ts` = `withTimeout` dipakai Bing dan sumber language model. |
+| Translate | `translate/*.ts`, `plugin/translateAli.ts`, `util/timeout.ts` | Ali di-expose lewat API ekstensi ini sendiri (`extendTranslate`). `FallbackTranslate.ts` = komposit rantai fallback; `util/timeout.ts` = `withTimeout` dipakai Bing dan sumber language model. `lineBreakFallback.ts` = `normalizeTranslatedLines`: memetakan hasil terjemahan ke baris sumber bila provider menggabung/memecah baris (dipakai `compile.ts` dan `commentDecoration.ts`); `ITranslatedText.targets` sejajar indeks dengan `texts`/`tokens`. |
 
 Sumber terjemahan built-in (key = nilai `commentTranslate.source`):
 
