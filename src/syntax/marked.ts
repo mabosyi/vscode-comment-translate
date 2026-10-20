@@ -1,6 +1,6 @@
 import { marked, Renderer } from "marked";
 import { unescape } from "querystring";
-import { detectLanguage } from "../lang";
+import { detectLanguage, isSameLanguage } from "../lang";
 import { Position, Range, TextDocument } from "vscode";
 import { translateManager } from "../translate/manager";
 
@@ -177,7 +177,7 @@ export async function getMarkdownTextValue(markStr: string) {
 
                             // If the original text is in the target language, no more translation will be performed
                             let detected = await detectLanguage(txt);
-                            if (translateManager.opts.to?.indexOf(detected) === 0) {
+                            if (isSameLanguage(detected, translateManager.opts.to || '')) {
                                 return txt;
                             }
 

@@ -5,7 +5,7 @@ import { ITranslateConfig, TranslateExtensionProvider } from "./translateExtensi
 import { GoogleTranslate } from "./GoogleTranslate";
 import { BingTranslate } from "./BingTranslate";
 import { DeepLTranslate } from "./DeepLTranslate";
-import { detectLanguage } from "../lang";
+import { detectLanguage, isSameLanguage } from "../lang";
 import { LanguageModelTranslate } from "./LanguageModelTranslate";
 import { TranSmartTranslate } from "./TranSmartTranslate";
 
@@ -40,6 +40,18 @@ function buildTranslateCacheKey(text: string, opts?: ITranslateOptions) {
     return `${sourceProvider}|${from}|${to}|${text}`;
 }
 
+// Text already in the target language is returned as-is, without a request: browse mode
+// and the Markdown paths would otherwise send whole documents in the user's own language,
+// spending quota and tripping rate limits (DeepL 429).
+async function translateUnlessSameLanguage(text: string, opts?: ITranslateOptions): Promise<string> {
+    const to = opts?.to || translateManager.opts.to || 'en';
+    const detected = await detectLanguage(text).catch(() => '');
+    if (isSameLanguage(detected, to)) {
+        return text;
+    }
+    return translateManager.translate(text, opts);
+}
+
 /**
  * Translate with a per-session memo and in-flight request dedupe.
  * TranslateManager.translate resolves to '' when the source fails (HTTP 401/429,
@@ -58,7 +70,7 @@ export async function cachedTranslate(text: string, opts?: ITranslateOptions): P
         return pending;
     }
 
-    const task = translateManager.translate(text, opts)
+    const task = translateUnlessSameLanguage(text, opts)
         .then((result) => {
             if (result) {
                 sessionTranslateCache.set(key, result);
@@ -180,7 +192,7 @@ export async function autoMutualTranslate(text: string, opts?: ITranslateOptions
     const isMutualTranslateEnabled = getConfig<boolean>('mutualTranslate', false);
     if (isMutualTranslateEnabled) {
         let detectedLanguage = await detectLanguage(text);
-        if (targetLanguage.indexOf(detectedLanguage) === 0) {
+        if (isSameLanguage(detectedLanguage, targetLanguage)) {
             targetLanguage = sourceLanguage;
             // In the case of automatic detection, the target language for translation cannot be auto
             if (targetLanguage === 'auto') targetLanguage = 'en';

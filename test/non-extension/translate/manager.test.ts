@@ -45,6 +45,13 @@ describe('cachedTranslate', () => {
         expect(translate).toHaveBeenCalledTimes(1);
     });
 
+    test('returns text already in the target language without a request', async () => {
+        const indonesian = 'Aktifkan interupsi timer lalu bersihkan flag tertunda sebelum masuk mode tidur';
+
+        expect(await cachedTranslate(indonesian, { to: 'id' })).toBe(indonesian);
+        expect(translate).not.toHaveBeenCalled();
+    });
+
     test('does not memoize a failed (empty) translation', async () => {
         translate
             .mockResolvedValueOnce('')
