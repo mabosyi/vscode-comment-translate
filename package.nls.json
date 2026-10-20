@@ -34,6 +34,7 @@
     "commentTranslate.command.openMarkdownTranslatePreview": "Open Markdown Translate Preview",
     "commentTranslate.command.setDeepLApiKey": "Set DeepL API Key",
     "commentTranslate.command.selectLanguageModel": "Select Language Model",
+    "commentTranslate.command.clearTranslationCache": "Clear Translation Cache",
     "commentTranslate.configuration.fallbackSources": "Translate sources tried in order after `#commentTranslate.source#` fails, for example `[\"Copilot\", \"Bing\"]`. Built-in sources only: `Google`, `Bing`, `DeepL`, `Copilot`, `TranSmart`. Avoid `Google` in the chain: its 500-character limit shrinks the request size of every source.",
     "commentTranslate.configuration.languageModelId": "Language model used by the `Copilot` source. Set it with the **Comment Translate: Select Language Model** command. Empty uses the first GitHub Copilot model."
 }

@@ -158,6 +158,11 @@
                 "command": "commentTranslate.selectLanguageModel",
                 "title": "%commentTranslate.command.selectLanguageModel%",
                 "category": "Comment Translate"
+            },
+            {
+                "command": "commentTranslate.clearTranslationCache",
+                "title": "%commentTranslate.command.clearTranslationCache%",
+                "category": "Comment Translate"
             }
         ],
         "keybindings": [

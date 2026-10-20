@@ -1,9 +1,15 @@
-import { commands, ExtensionContext } from "vscode";
+import { commands, ExtensionContext, window } from "vscode";
 import { changeTargetLanguage, changeTranslateSource, openOutputPannel, toggleBrowseMode, toggleEnableHover, toggleMultiLineMerge, toggleTempBrowseMode } from "./changeTargetLanguage";
 import { quickTranslationCommand, selectAllComment, selectAllText, translateAllComment, translateAllText, translateTerminalForCopilotChatCommand } from "./file";
 import { nameVariableCommand, replaceRange, replaceSelections } from "./replaceSelections";
 import { addSelection, clipboard, selectLastHover } from "./select";
 import { selectLanguageModel, setDeepLApiKey } from "./sourceSetup";
+import { clearTranslationCache } from "../translate/manager";
+
+async function clearTranslationCacheCommand() {
+    const count = await clearTranslationCache();
+    window.showInformationMessage(`Cleared ${count} cached translations. Reopen open previews to refresh them.`);
+}
 
 export function registerCommands(context: ExtensionContext) {
     context.subscriptions.push(
@@ -30,5 +36,6 @@ export function registerCommands(context: ExtensionContext) {
         commands.registerCommand('commentTranslate.nameVariable', nameVariableCommand), // add keyboard
         commands.registerCommand('commentTranslate.setDeepLApiKey', setDeepLApiKey),
         commands.registerCommand('commentTranslate.selectLanguageModel', selectLanguageModel),
+        commands.registerCommand('commentTranslate.clearTranslationCache', clearTranslationCacheCommand),
     );
 }

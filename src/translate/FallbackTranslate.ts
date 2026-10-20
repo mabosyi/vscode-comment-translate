@@ -11,7 +11,7 @@ export interface FallbackMember {
 
 // ponytail: TranslateManager persists whatever a member returns under the chain key in
 // workspaceState, so a fallback result is never retried with the primary source later.
-// Add a clear-cache command if that becomes a problem.
+// The "Clear Translation Cache" command (clearTranslationCache in manager.ts) removes them.
 export function createFallbackTranslate(members: FallbackMember[]): new () => ITranslate {
     return class FallbackTranslate implements ITranslate {
         private readonly _members = members.map(({ id, ctor }) => ({ id, translator: new ctor() }));
