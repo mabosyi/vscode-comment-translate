@@ -7,6 +7,7 @@ import {
 } from 'vscode';
 import { getConfig } from '../configuration';
 import { LANGS } from '../lang';
+import { withTimeout } from '../util/timeout';
 
 const REQUEST_TIMEOUT_MS = 30000;
 const LANGUAGE_NAMES = new Map(LANGS);
@@ -41,8 +42,7 @@ export async function resolveModel(id: string): Promise<LanguageModelChat> {
 
 export async function translateWithModel(model: LanguageModelChat, text: string, to: string): Promise<string> {
     const cancel = new CancellationTokenSource();
-    const timer = setTimeout(() => cancel.cancel(), REQUEST_TIMEOUT_MS);
-    try {
+    const consume = async () => {
         const response = await model.sendRequest(
             [LanguageModelChatMessage.User(buildTranslatePrompt(text, to))], {}, cancel.token);
         let out = '';
@@ -50,13 +50,17 @@ export async function translateWithModel(model: LanguageModelChat, text: string,
             out += fragment;
         }
         return out.replace(/\s+$/, '');
+    };
+    try {
+        return await withTimeout(consume(), REQUEST_TIMEOUT_MS, 'Language model request');
     } catch (e) {
         if (e instanceof LanguageModelError && e.code === 'NoPermissions') {
             throw new Error(`Language model access was not granted. ${LM_SETUP_HINT}`);
         }
         throw e;
     } finally {
-        clearTimeout(timer);
+        // Stops the provider after a timeout; harmless after a completed request.
+        cancel.cancel();
         cancel.dispose();
     }
 }

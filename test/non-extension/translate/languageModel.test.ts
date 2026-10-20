@@ -2,6 +2,7 @@
 // streamed response handling and consent errors. vscode.lm is mocked.
 const mockSelectChatModels = jest.fn();
 const mockGetConfig = jest.fn();
+const mockTokenSources: { cancel: jest.Mock; dispose: jest.Mock }[] = [];
 
 jest.mock('vscode', () => {
     class LanguageModelError extends Error {
@@ -13,6 +14,9 @@ jest.mock('vscode', () => {
         token = { isCancellationRequested: false };
         cancel = jest.fn();
         dispose = jest.fn();
+        constructor() {
+            mockTokenSources.push(this);
+        }
     }
     return {
         lm: { selectChatModels: (...args: unknown[]) => mockSelectChatModels(...args) },
@@ -27,7 +31,7 @@ jest.mock('../../../src/configuration', () => ({
 
 import { LanguageModelError } from 'vscode';
 import {
-    buildTranslatePrompt, LanguageModelTranslate, resolveModel,
+    buildTranslatePrompt, LanguageModelTranslate, resolveModel, translateWithModel,
 } from '../../../src/translate/LanguageModelTranslate';
 
 function fakeModel(id: string, vendor: string, reply: string[] | Error = []) {
@@ -45,6 +49,7 @@ function fakeModel(id: string, vendor: string, reply: string[] | Error = []) {
 beforeEach(() => {
     mockSelectChatModels.mockReset();
     mockGetConfig.mockReset();
+    mockTokenSources.length = 0;
 });
 
 describe('buildTranslatePrompt', () => {
@@ -102,5 +107,26 @@ describe('LanguageModelTranslate.translate', () => {
     test('blank input skips the model lookup', async () => {
         expect(await new LanguageModelTranslate().translate(' ', { to: 'id' })).toBe('');
         expect(mockSelectChatModels).not.toHaveBeenCalled();
+    });
+});
+
+describe('translateWithModel timeout', () => {
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
+    test('rejects after 30 s and cancels the token when the provider never settles', async () => {
+        jest.useFakeTimers();
+        const model = fakeModel('gpt-4o', 'copilot');
+        model.sendRequest.mockImplementation(() => new Promise(() => undefined) as never);
+        const assertion = expect(translateWithModel(model as never, '中断', 'id'))
+            .rejects.toThrow('Language model request timed out after 30 s');
+
+        await jest.advanceTimersByTimeAsync(30000);
+
+        await assertion;
+        expect(mockTokenSources).toHaveLength(1);
+        expect(mockTokenSources[0].cancel).toHaveBeenCalledTimes(1);
+        expect(mockTokenSources[0].dispose).toHaveBeenCalledTimes(1);
     });
 });
