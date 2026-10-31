@@ -4,6 +4,8 @@ import { translateManager } from "../../../src/translate/manager";
 import { marked } from "marked";
 import { getFixtureFile } from "../mocks";
 
+// No cachedTranslate here on purpose: marked.ts must not route through it (see the tests
+// for lines already in the target language), and calling it would throw.
 jest.mock("../../../src/translate/manager", () => {
     return {
         translateManager: {
@@ -106,6 +108,58 @@ describe("HTML visibility in markdown", () => {
 
         expect(result.hasTranslated).toBe(true);
         expect(translateManager.translate).toHaveBeenCalled();
+    });
+});
+
+describe("Lines already in the target language", () => {
+    const indonesian = "Fungsi ini mengirim data ke perangkat melalui antarmuka serial dan menunggu balasan.";
+    const english = "This function reads the configuration from flash memory before the radio starts.";
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        translateManager.opts.to = 'id';
+    });
+
+    afterEach(() => {
+        translateManager.opts.to = 'en';
+    });
+
+    test("sends only the foreign lines", async () => {
+        const translatedEnglish = "Fungsi ini membaca konfigurasi dari memori flash sebelum radio dimulai.";
+        (translateManager.translate as jest.Mock).mockResolvedValueOnce(translatedEnglish);
+
+        const result = await getMarkdownTextValue(`${indonesian}\n${english}`);
+
+        expect(translateManager.translate).toHaveBeenCalledTimes(1);
+        expect(translateManager.translate).toHaveBeenCalledWith(english);
+        expect(result.hasTranslated).toBe(true);
+        expect(result.result).toBe(`${indonesian}\n${translatedEnglish}`);
+    });
+
+    test("sends nothing when every line is already in the target language", async () => {
+        const result = await getMarkdownTextValue(indonesian);
+
+        expect(translateManager.translate).not.toHaveBeenCalled();
+        expect(result.hasTranslated).toBe(false);
+        expect(result.result).toBe(indonesian);
+    });
+
+    test("sends lines that pass the per-line check even if cld3 reads them joined as the target", async () => {
+        // cld3 reads each line as sn/ja/nl but the joined text as "id"; no second check may drop them.
+        const lines = "Status code\nCallback function\nClock source";
+        (translateManager.translate as jest.Mock).mockResolvedValueOnce("Kode status\nFungsi callback\nSumber clock");
+
+        const result = await getMarkdownTextValue(lines);
+
+        expect(translateManager.translate).toHaveBeenCalledWith(lines);
+        expect(result.result).toBe("Kode status\nFungsi callback\nSumber clock");
+    });
+
+    test("does not send a link title that is already in the target language", async () => {
+        const result = await getMarkdownTextValue(`[${indonesian}](https://example.com "${indonesian}")`);
+
+        expect(translateManager.translate).not.toHaveBeenCalled();
+        expect(result.hasTranslated).toBe(false);
     });
 });
 

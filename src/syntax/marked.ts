@@ -102,12 +102,21 @@ export function hasVisibleHtmlContent(html: string): boolean {
     return textContent.length > 0;
 }
 
+/**
+ * Translates the text and link titles of a Markdown string, keeping its structure.
+ * Pass 1 collects every text line; lines already in the target language are dropped,
+ * and the rest go out as one request (one line per line, so results map back by index).
+ * Pass 2 renders the Markdown with each remaining line replaced by its translation.
+ */
 export async function getMarkdownTextValue(markStr: string) {
     let textArr: string[] = [];
     let translatedTask: Promise<string>;
 
     async function translate(text: string) {
         if (!translatedTask) {
+            // Not cachedTranslate: its whole-text language check can read lines that each
+            // passed the per-line check (e.g. "Status code" / "Clock source") as the target
+            // language and return them untranslated.
             translatedTask = translateManager.translate(textArr.join("\n"));
         }
         let translated = (await translatedTask).split("\n");
@@ -145,6 +154,14 @@ export async function getMarkdownTextValue(markStr: string) {
         return { result: markStr, hasTranslated: false };
     }
 
+    // Lines already in the target language stay as they are and are left out of the
+    // request; otherwise one foreign line would send the whole text to the source.
+    const to = translateManager.opts.to || '';
+    const sameLanguage = await Promise.all(
+        textArr.map(async (txt) => isSameLanguage(await detectLanguage(txt), to))
+    );
+    textArr = textArr.filter((_, index) => !sameLanguage[index]);
+
     let hasTranslated = false;
 
     let result = await marked.parse(markStr, {
@@ -158,7 +175,7 @@ export async function getMarkdownTextValue(markStr: string) {
                     token.title = (
                         await Promise.all(
                             arr.map(async (txt) => {
-                                return translate(txt);
+                                return textArr.includes(txt) ? translate(txt) : txt;
                             })
                         )
                     ).join("\n");
@@ -174,21 +191,14 @@ export async function getMarkdownTextValue(markStr: string) {
                 token.text = (
                     await Promise.all(
                         arr.map(async (txt) => {
-
-                            // If the original text is in the target language, no more translation will be performed
-                            let detected = await detectLanguage(txt);
-                            if (isSameLanguage(detected, translateManager.opts.to || '')) {
+                            if (!textArr.includes(txt)) {
                                 return txt;
                             }
-
                             hasTranslated = true;
                             return translate(txt);
                         })
                     )
                 ).join("\n");
-
-                console.log(token.text);
-                //   token.text = await translateManager.translate(text,{to});
             }
         },
         async: true,
