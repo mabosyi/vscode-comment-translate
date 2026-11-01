@@ -1473,6 +1473,9 @@ describe("markup inside bold or italic text", () => {
         ["a link inside bold in a table cell", "| A | B |\n|---|---|\n| **see [d](u)** | x |", "| A | B |\n|---|---|\n| **<see >[<d>](u)** | <x> |"],
         ["plain bold text (unchanged)", "**Bold** text", "**<Bold>**< text>"],
         ["markup next to a backslash escape (sent as one piece)", "**a \\* b `c`**", "**<a \\* b `c`>**"],
+        ["a link inside strikethrough", "~~old [link](https://x.com) gone~~", "~~<old >[<link>](https://x.com)< gone>~~"],
+        ["strikethrough with a link inside bold", "**old ~~[l](http://u)~~**", "**<old >~~[<l>](http://u)~~**"],
+        ["plain strikethrough", "~~plain~~ text", "~~<plain>~~< text>"],
     ])("keeps the URL, code and markers verbatim: %s", async (_name, source, expected) => {
         const result = await translateMarkdownDocument(source, wrap);
         expect(result.split("\n").slice(-1)[0]).toBe(expected.split("\n").slice(-1)[0]);

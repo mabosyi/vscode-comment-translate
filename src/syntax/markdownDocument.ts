@@ -272,21 +272,24 @@ function parseInlineSegments(content: string): InlineSegment[] {
                     break;
                 }
                 case 'strong':
-                case 'em': {
-                    // Split strong/em into marker (non-translatable) + inner text
+                case 'em':
+                case 'del': {
+                    // Split strong/em/del into marker (non-translatable) + inner text
                     // (translatable) + marker (non-translatable). This prevents
                     // the markdown markers (**/**) from being sent to the
                     // translation service, which can corrupt them by inserting
                     // spaces (e.g. "**Causes:**" → "** 原因：**").
                     // A link, code span or HTML inside is kept verbatim (pushInnerContent), so a
-                    // URL is never sent to the translator and bold text that is only a link
+                    // URL is not sent to the translator and bold text that is only a link
                     // still gets its link text translated.
-                    const formattedToken = token as marked.Tokens.Strong | marked.Tokens.Em;
-                    const markerLength = token.type === 'strong' ? 2 : 1;
+                    const formattedToken = token as marked.Tokens.Strong | marked.Tokens.Em | marked.Tokens.Del;
+                    const markerLength = token.type === 'strong' ? 2
+                        : token.type === 'em' ? 1
+                        : token.raw.match(/^~+/)![0].length;
                     const inner = formattedToken.tokens ?? [];
                     const hasTextContent = inner.some((t: marked.Token) => t.type === 'text' && t.raw.trim());
                     if (hasTextContent || hasMarkup(inner)) {
-                        // Take the markers verbatim from the source (`**`/`__` or `*`/`_`).
+                        // Take the markers verbatim from the source (`**`/`__`, `*`/`_`, `~~`/`~`).
                         const innerText = token.raw.slice(markerLength, token.raw.length - markerLength);
                         segments.push({ raw: token.raw.slice(0, markerLength), translatable: false });
                         pushInnerContent(inner, innerText);
