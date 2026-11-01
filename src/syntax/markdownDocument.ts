@@ -138,9 +138,11 @@ function escapeRegExp(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// A row ending in an escaped pipe (`\|`) has no closing delimiter; it is treated as a plain line
+// so splitTableCells never drops its last cell.
 function isTableRow(line: string): boolean {
     const trimmed = line.trim();
-    return trimmed.startsWith('|') && trimmed.endsWith('|') && !TABLE_SEPARATOR_RE.test(line);
+    return trimmed.startsWith('|') && /(?<!\\)\|$/.test(trimmed) && !TABLE_SEPARATOR_RE.test(line);
 }
 
 /**
@@ -747,30 +749,34 @@ export function reconstructDocument(lineMetas: LineMeta[], translatedTexts: stri
 }
 
 /**
- * True when the source returned one line per line it was sent (a trailing newline is ignored).
- * Same test normalizeTranslatedLines uses to keep lines as returned; batch lines are never blank,
- * so its blank-line rules do not apply here.
+ * The translated lines exactly as returned, when the source returned one line per line it was
+ * sent (trailing line breaks are ignored, trailing spaces are kept); otherwise undefined.
  */
-function keepsLineCount(sourceText: string, translatedText: string): boolean {
-    const lineCount = sourceText.split('\n').length;
-    return [translatedText.replace(/\s+$/, ''), translatedText]
-        .some(text => text.replace(/\r\n?/g, '\n').split('\n').length === lineCount);
+function linesAsReturned(lineCount: number, translatedText: string): string[] | undefined {
+    const normalized = translatedText.replace(/\r\n?/g, '\n');
+    for (const text of [normalized, normalized.replace(/\n+$/, '')]) {
+        const lines = text.split('\n');
+        if (lines.length === lineCount) {
+            return lines;
+        }
+    }
+    return undefined;
 }
 
 /**
  * Map a translation back onto the lines that were sent: always one entry per source line.
- * Lines the source returned one for one are left exactly as returned. Otherwise the lines are
+ * Lines the source returned one for one are kept exactly as returned. Otherwise the text is
  * re-cut by normalizeTranslatedLines; re-cut pieces lose their edge spaces, which separate text
  * from inline code (`ID `x` to`), so a missing leading or trailing space is copied back from
  * the source line.
  */
 function alignTranslatedLines(sourceText: string, translatedText: string): string[] {
     const sourceLines = sourceText.split('\n');
-    const aligned = normalizeTranslatedLines(sourceLines, translatedText);
-    if (keepsLineCount(sourceText, translatedText)) {
-        return aligned;
+    const asReturned = linesAsReturned(sourceLines.length, translatedText);
+    if (asReturned) {
+        return asReturned;
     }
-    return aligned.map((line, i) => {
+    return normalizeTranslatedLines(sourceLines, translatedText).map((line, i) => {
         if (!line) {
             return line;
         }
@@ -781,31 +787,41 @@ function alignTranslatedLines(sourceText: string, translatedText: string): strin
 }
 
 /**
- * Translate several entries (each may span lines, e.g. a table row) in one request and return
- * one translation per entry. Sources sometimes merge or split lines (13 of 194 multi-line
- * requests in the user's logs, 2026-10-27 to 30, mostly merges around inline code). Where that
- * happened is unknown, and padding or cutting the result would give every later entry its
- * neighbour's text, so each entry is translated again on its own; a mismatch inside one entry is
- * then re-cut by alignTranslatedLines and stays inside that entry.
- * An empty result means the request failed; it is not retried per entry, which would multiply
- * requests against a source that is rate limiting.
- * Cost: up to one extra request per entry, only for batches that came back misaligned.
+ * Translate `pieces` (each may span lines, e.g. a table row) in one request and return one
+ * translation per piece. Sources sometimes merge or split lines: 13 of 194 multi-line requests
+ * in the user's logs (2026-10-27 to 30, comments and previews together) came back with a
+ * different line count, 12 of them with fewer lines. Where that happened is unknown, and padding
+ * or cutting the result would give every later piece its neighbour's text, so each piece is
+ * translated again on its own. A piece that spans lines and still comes back misaligned is split
+ * once more, line by line, so no text moves into a neighbouring line or table cell; only a single
+ * line that comes back as several is joined again (alignTranslatedLines).
+ * An empty result means the request failed; it is not retried, which would multiply requests
+ * against a source that is rate limiting. A merge and a split that cancel out are not detected.
+ * Cost: extra requests only for results that came back misaligned, at most one per piece plus
+ * one per line of each piece that is misaligned again.
+ *
+ * @param translated The result for the joined pieces when the caller already has it.
  */
-async function translateEntries(
-    entries: string[],
-    translateFn: (text: string) => Promise<string>
+async function translatePieces(
+    pieces: string[],
+    translateFn: (text: string) => Promise<string>,
+    translated?: string
 ): Promise<string[]> {
-    const joined = entries.join('\n');
-    const translated = await translateFn(joined);
-    if (entries.length > 1 && translated.trim() && !keepsLineCount(joined, translated)) {
-        return Promise.all(entries.map(async entry =>
-            alignTranslatedLines(entry, await translateFn(entry)).join('\n')));
+    const joined = pieces.join('\n');
+    const result = translated ?? await translateFn(joined);
+    if (pieces.length > 1 && result.trim() && !linesAsReturned(joined.split('\n').length, result)) {
+        return Promise.all(pieces.map(async piece => {
+            const pieceResult = await translateFn(piece);
+            return piece.includes('\n')
+                ? (await translatePieces(piece.split('\n'), translateFn, pieceResult)).join('\n')
+                : alignTranslatedLines(piece, pieceResult).join('\n');
+        }));
     }
 
-    const lines = alignTranslatedLines(joined, translated);
+    const lines = alignTranslatedLines(joined, result);
     let offset = 0;
-    return entries.map(entry => {
-        const count = entry.split('\n').length;
+    return pieces.map(piece => {
+        const count = piece.split('\n').length;
         const chunk = lines.slice(offset, offset + count).join('\n');
         offset += count;
         return chunk;
@@ -833,8 +849,8 @@ export async function translateMarkdownDocument(
     }
 
     // Each translatable text may contain \n (e.g. table rows with multiple cells);
-    // translateEntries hands back one translation per entry.
-    const translatedTexts = await translateEntries(translatableTexts, translateFn);
+    // translatePieces hands back one translation per entry.
+    const translatedTexts = await translatePieces(translatableTexts, translateFn);
     return reconstructDocument(lineMetas, translatedTexts);
 }
 
@@ -1033,7 +1049,7 @@ export async function translateMarkdownDocumentProgressive(
     for (let batchOffset = 0; batchOffset < indicesToTranslate.length; batchOffset += batchSize) {
         const batchIndices = indicesToTranslate.slice(batchOffset, batchOffset + batchSize);
         const batchTexts = batchIndices.map(i => translatableTexts[i]);
-        const batchResults = await translateEntries(batchTexts, translateFn);
+        const batchResults = await translatePieces(batchTexts, translateFn);
         batchIndices.forEach((entryIndex, j) => {
             translatedTexts[entryIndex] = batchResults[j];
         });

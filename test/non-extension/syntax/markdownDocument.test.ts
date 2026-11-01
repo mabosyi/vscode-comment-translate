@@ -1307,6 +1307,11 @@ describe("table rows with several text pieces in a cell", () => {
         await translateMarkdownDocument(header + "| Set `reg` now | | `x` |", translate);
         expect(translate).toHaveBeenCalledWith("A\nB\nC\nSet \n now");
     });
+
+    it("keeps a row that ends in an escaped pipe whole", async () => {
+        const source = "| A | B |\n|---|---|\n| a | b \\|";
+        expect(await translateMarkdownDocument(source, async (text) => text)).toBe(source);
+    });
 });
 
 // ── A source that merges or splits lines must not shift later lines ──────
@@ -1333,11 +1338,27 @@ describe("translation with a different line count", () => {
         expect([lines[0], lines[2], lines[4]]).toEqual(["ALPHA ONE", "BRAVO TWO", "CHARLIE THREE"]);
     });
 
-    it("re-cuts a table row whose own cells were merged without touching other rows", async () => {
-        const table = "| A | B |\n|---|---|\n| Set `reg` now | Next |\n| Done | Last |";
-        const lines = (await translateMarkdownDocument(table, mergeFirstTwo)).split("\n");
-        expect(lines[3]).toBe("| DONE | LAST |");
-        expect(lines[2]).toMatch(/^\| SET .*`reg`.* \| .+ \|$/);
+    it("splits a table row line by line when its own pieces are merged again", async () => {
+        // Translations change length (English to Indonesian) and every multi-line request comes
+        // back with its first two lines merged, so the batch and each row are misaligned.
+        const dictionary: Record<string, string> = {
+            "Set ": "Atur ", " to ": " ke ", " now": " sekarang",
+            "Description of the register": "Deskripsi dari register", "Done": "Selesai", "Last": "Terakhir",
+        };
+        const translate = async (text: string): Promise<string> => {
+            const lines = text.split("\n").map((line) => dictionary[line] ?? line);
+            return lines.length < 2 ? lines[0] : [`${lines[0].trim()} ${lines[1].trim()}`, ...lines.slice(2)].join("\n");
+        };
+        const table = "| A | B |\n|---|---|\n| Set `reg` to `1` now | Description of the register |\n| Done | Last |";
+        const lines = (await translateMarkdownDocument(table, translate)).split("\n");
+        expect(lines[0]).toBe("| A | B |");
+        expect(lines[2]).toBe("| Atur `reg` ke `1` sekarang | Deskripsi dari register |");
+        expect(lines[3]).toBe("| Selesai | Terakhir |");
+    });
+
+    it("keeps a one-for-one result exactly as returned, trailing space included", async () => {
+        const result = await translateMarkdownDocument("Intro\n\nSet the ID `x`", async (text) => text.toUpperCase());
+        expect(result).toBe("INTRO\n\nSET THE ID `x`");
     });
 
     it("does not retry a failed (empty) batch entry by entry", async () => {
