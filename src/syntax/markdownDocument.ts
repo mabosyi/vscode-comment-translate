@@ -202,9 +202,8 @@ function parseInlineSegments(content: string): InlineSegment[] {
                     segments.push({ raw: token.raw, translatable: false });
                     break;
                 case 'link': {
-                    // Translate the link's display text while preserving the URL.
-                    // Split into: "[" (non-translatable) + display text (translatable)
-                    // + "](url)" (non-translatable).
+                    // Translate the display text of a `[text](url)` link while
+                    // preserving the URL.
                     //
                     // Special case: if the link text contains an image
                     // (e.g. [![alt](img-url)](link-url)), the entire link is
@@ -212,8 +211,6 @@ function parseInlineSegments(content: string): InlineSegment[] {
                     // corrupt it.
                     const linkToken = token as marked.Tokens.Link;
                     const linkText = linkToken.text;
-                    const linkHref = linkToken.href;
-                    const linkTitle = linkToken.title;
 
                     // Detect nested image inside link text: [![...](...)
                     const hasNestedImage = /!\[.*?\]\(.*?\)/.test(linkText);
@@ -221,22 +218,23 @@ function parseInlineSegments(content: string): InlineSegment[] {
                     if (hasNestedImage) {
                         // Image-in-link – keep entire raw token untranslated
                         segments.push({ raw: token.raw, translatable: false });
-                    } else if (linkText && linkText.trim()) {
-                        // URL suffix: everything after the link text, taken verbatim
-                        // from the source so reconstructInlineContent can locate it
-                        // (e.g. `](href 'title')` or `][ref]`). Fall back to a rebuilt
-                        // `](href "title")` when the text was unescaped by marked.
-                        const sourcePrefix = `[${linkText}`;
-                        const titlePart = linkTitle ? ` "${linkTitle}"` : '';
-                        const urlSuffix = token.raw.startsWith(sourcePrefix)
-                            ? token.raw.slice(sourcePrefix.length)
-                            : `](${linkHref}${titlePart})`;
-
-                        segments.push({ raw: '[', translatable: false });
-                        segments.push({ raw: linkText, translatable: true });
-                        segments.push({ raw: urlSuffix, translatable: false });
+                    } else if (linkText && linkText.trim() && token.raw.startsWith('[')) {
+                        // Split into `[`, the text, and `](href 'title')`, all verbatim
+                        // slices of the source so reconstructInlineContent can locate them.
+                        // Verbatim link text sits right after `[` and before `]`. When marked
+                        // has unescaped it (escaped brackets such as `\]`), it is not there;
+                        // keep the whole link untranslated instead of matching the same text
+                        // inside the title or the URL.
+                        if (token.raw.startsWith(linkText + ']', 1)) {
+                            segments.push({ raw: '[', translatable: false });
+                            segments.push({ raw: linkText, translatable: true });
+                            segments.push({ raw: token.raw.slice(1 + linkText.length), translatable: false });
+                        } else {
+                            segments.push({ raw: token.raw, translatable: false });
+                        }
                     } else {
-                        // Empty or whitespace-only link text – keep as-is
+                        // Empty or whitespace-only link text, autolinks (<url>) and bare/www
+                        // URLs (raw does not start with `[`) – keep as-is, untranslated
                         segments.push({ raw: token.raw, translatable: false });
                     }
                     break;
@@ -255,9 +253,10 @@ function parseInlineSegments(content: string): InlineSegment[] {
                     if (hasTextContent) {
                         // Extract inner text (strip the markers)
                         const innerText = token.raw.slice(marker.length, token.raw.length - marker.length);
-                        segments.push({ raw: marker, translatable: false });
+                        // Take the markers verbatim from the source (`_` or `*`).
+                        segments.push({ raw: token.raw.slice(0, marker.length), translatable: false });
                         segments.push({ raw: innerText, translatable: true });
-                        segments.push({ raw: marker, translatable: false });
+                        segments.push({ raw: token.raw.slice(token.raw.length - marker.length), translatable: false });
                     } else {
                         segments.push({ raw: token.raw, translatable: false });
                     }
@@ -335,10 +334,9 @@ function extractInlineTranslatableText(content: string): {
  *
  * How a segment is located:
  * - translatable: first occurrence at or after the cursor (`indexOf`);
- * - non-translatable: only exactly at the cursor. Not every one is a verbatim
- *   slice of the source (see parseInlineSegments), and a forward search would
- *   let such a segment match a later, unrelated spot and skip text that still
- *   needs translating. Skipping one is lossless: the gap is copied later.
+ * - non-translatable: only exactly at the cursor, so it cannot match a later,
+ *   unrelated spot. Each one is a verbatim slice of the source (see
+ *   parseInlineSegments), so it normally sits at the cursor.
  *
  * A segment that is not found is left out: its translated part is consumed
  * and the original text stays as is.
@@ -355,11 +353,8 @@ function reconstructInlineContent(
     for (const segment of segments) {
         const hasPart = segment.translatable && partIndex < translatedParts.length;
         const translatedPart = hasPart ? translatedParts[partIndex++] : segment.raw;
-        // Translatable text is searched forward (it may follow an unmatched
-        // marker). Non-translatable segments must sit exactly at the cursor: some
-        // are synthesized by parseInlineSegments (the `*` markers of `_em_`, the
-        // `[` / `](href)` around an autolink) and would otherwise match a later,
-        // unrelated spot and skip text that still needs translating.
+        // Translatable text is searched forward; non-translatable segments must
+        // sit exactly at the cursor so they cannot match a later, unrelated spot.
         const start = segment.translatable
             ? originalContent.indexOf(segment.raw, cursor)
             : (originalContent.startsWith(segment.raw, cursor) ? cursor : -1);

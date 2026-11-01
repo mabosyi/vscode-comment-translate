@@ -1248,11 +1248,11 @@ describe("translateMarkdownDocument keeps non-translatable inline parts intact",
         expect(result).toBe("**T**x $&`code`Tx $&");
     });
 
-    // Regression: parseInlineSegments synthesizes some non-translatable segments
-    // (the `*` markers of `_em_`, the `[` and `](href)` around an autolink or a
-    // bare URL) that are not in the source. They must not match a later, unrelated
-    // spot and make reconstructInlineContent skip text that still needs translating.
-    describe("unmatched synthesized markers", () => {
+    // Regression: every non-translatable segment must be a verbatim slice of the
+    // source (markers, URLs, autolinks, links whose text marked rewrites). Otherwise
+    // reconstructInlineContent cannot locate it, its cursor stays behind, and a later
+    // short segment such as ":" lands inside a URL or an HTML attribute.
+    describe("non-translatable segments stay verbatim", () => {
         // Wraps every translated piece in <...> so untranslated text stays visible.
         const wrap = async (text: string): Promise<string> =>
             text.split("\n").map((line) => `<${line}>`).join("\n");
@@ -1260,11 +1260,21 @@ describe("translateMarkdownDocument keeps non-translatable inline parts intact",
         it.each([
             ["underscore em followed by strong", "Use _this_ and **that** please", "<Use >_<this>_< and >**<that>**< please>"],
             ["strong, underscore em, strong", "**bold** then _it_ then **bold2** end", "**<bold>**< then >_<it>_< then >**<bold2>**< end>"],
-            ["bare URL followed by brackets", "Docs: https://x.com (see [1]) done", "<Docs: ><https://x.com>< (see [1]) done>"],
-            ["bare URL followed by a real link", "Visit https://a.com and [docs](https://b.com)", "<Visit ><https://a.com>< and >[<docs>](https://b.com)"],
+            ["bare URL followed by brackets", "Docs: https://x.com (see [1]) done", "<Docs: >https://x.com< (see [1]) done>"],
+            ["bare URL followed by a real link", "Visit https://a.com and [docs](https://b.com)", "<Visit >https://a.com< and >[<docs>](https://b.com)"],
             ["repeated identical code span and text", "a `x` a `x` a", "<a >`x`< a >`x`< a>"],
             ["repeated identical strong", "go **a** and **a** and a", "<go >**<a>**< and >**<a>**< and a>"],
-        ])("keeps translating text after %s", async (_name, source, expected) => {
+            ["underscore em before an HTML href", '_a_ <a href="x:y">:</a>:', '_<a>_ <a href="x:y"><:></a><:>'],
+            ["underscore strong before an HTML href", '__a__ <a href="x:y">:</a>:', '__<a>__ <a href="x:y"><:></a><:>'],
+            ["angle-bracket autolink before an HTML href", '<https://a.com> <a href="vscode:x">:</a>', '<https://a.com> <a href="vscode:x"><:></a>'],
+            ["email autolink before an HTML href", '<a@b.com> <a href="vscode:x">:</a>', '<a@b.com> <a href="vscode:x"><:></a>'],
+            ["autolink with '&' before an HTML href", '<https://a.com?x=1&y=2> <a href="vscode:x">:</a>', '<https://a.com?x=1&y=2> <a href="vscode:x"><:></a>'],
+            ["bare URL with '&' before an HTML href", 'Docs https://a.com?x=1&y=2 <a href="vscode:x">:</a>', '<Docs >https://a.com?x=1&y=2 <a href="vscode:x"><:></a>'],
+            ["link whose text has an escaped bracket", "[a\\]b](http://x) <a href=\"v:x\">:</a>", "[a\\]b](http://x) <a href=\"v:x\"><:></a>"],
+            ["escaped-bracket link whose text reappears in the title", "[a\\]b](http://x \"a]b\") tail: y", "[a\\]b](http://x \"a]b\")< tail: y>"],
+            ["escaped-bracket link whose text reappears in the URL", "[a\\]b](a]b) tail: y", "[a\\]b](a]b)< tail: y>"],
+            ["underscore em before a code span", "_a_ `b c` c", "_<a>_ `b c`< c>"],
+        ])("keeps URLs and translates text after %s", async (_name, source, expected) => {
             expect(await translateMarkdownDocument(source, wrap)).toBe(expected);
         });
     });
