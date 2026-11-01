@@ -120,7 +120,9 @@ export async function getMarkdownTextValue(markStr: string) {
             translatedTask = translateManager.translate(textArr.join("\n"));
         }
         let translated = (await translatedTask).split("\n");
-        return translated[textArr.indexOf(text)];
+        // An empty or missing line means the request failed (sources return ''): keep the source text.
+        const line = translated[textArr.indexOf(text)];
+        return line && line.trim() ? line : text;
     }
 
     let skipTranslate = false;
@@ -204,6 +206,10 @@ export async function getMarkdownTextValue(markStr: string) {
         async: true,
     });
     result = removeTrailingNewlines(result);
+    // A request that failed as a whole leaves nothing translated; no hover should repeat the source.
+    if (hasTranslated && !(await translatedTask!).trim()) {
+        hasTranslated = false;
+    }
     return { result, hasTranslated };
 }
 

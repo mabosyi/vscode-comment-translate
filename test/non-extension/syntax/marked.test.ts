@@ -111,6 +111,28 @@ describe("HTML visibility in markdown", () => {
     });
 });
 
+describe("Failed translation in a Markdown hover", () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        translateManager.opts.to = 'zh-CN';
+    });
+
+    afterEach(() => {
+        translateManager.opts.to = 'en';
+    });
+
+    test("shows the source lines instead of 'undefined' when the source returns ''", async () => {
+        (translateManager.translate as jest.Mock).mockResolvedValueOnce("");
+        const input = "First line of the comment text.\nSecond line of the comment text.";
+
+        const result = await getMarkdownTextValue(input);
+
+        expect(result.result).not.toContain("undefined");
+        expect(result.result).toBe(input);
+        expect(result.hasTranslated).toBe(false);
+    });
+});
+
 describe("Lines already in the target language", () => {
     const indonesian = "Fungsi ini mengirim data ke perangkat melalui antarmuka serial dan menunggu balasan.";
     const english = "This function reads the configuration from flash memory before the radio starts.";

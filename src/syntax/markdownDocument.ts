@@ -239,7 +239,17 @@ function parseInlineSegments(content: string): InlineSegment[] {
                         // inside the title or the URL.
                         if (token.raw.startsWith(linkText + ']', 1)) {
                             segments.push({ raw: '[', translatable: false });
-                            segments.push({ raw: linkText, translatable: true });
+                            // Code spans, HTML and emphasis markers inside the link text stay
+                            // verbatim, like outside a link. Walk the link's own tokens only when
+                            // they hold such a token and add up to the text exactly; plain text
+                            // (escapes included) stays one piece.
+                            const inner = linkToken.tokens ?? [];
+                            const hasMarkup = inner.some((t: marked.Token) => t.type !== 'text' && t.type !== 'escape');
+                            if (hasMarkup && inner.map((t: marked.Token) => t.raw).join('') === linkText) {
+                                walkInlineTokens(inner);
+                            } else {
+                                segments.push({ raw: linkText, translatable: true });
+                            }
                             segments.push({ raw: token.raw.slice(1 + linkText.length), translatable: false });
                         } else {
                             segments.push({ raw: token.raw, translatable: false });
@@ -363,8 +373,9 @@ function reconstructInlineContent(
     let result = '';
 
     for (const segment of segments) {
-        const hasPart = segment.translatable && partIndex < translatedParts.length;
-        const translatedPart = hasPart ? translatedParts[partIndex++] : segment.raw;
+        const part = segment.translatable && partIndex < translatedParts.length ? translatedParts[partIndex++] : undefined;
+        // An empty part means the piece was not translated (the request failed): keep its source text.
+        const translatedPart = part !== undefined && part.trim() ? part : segment.raw;
         // Translatable text is searched forward; non-translatable segments must
         // sit exactly at the cursor so they cannot match a later, unrelated spot.
         const start = segment.translatable
@@ -689,7 +700,8 @@ export function reconstructDocument(lineMetas: LineMeta[], translatedTexts: stri
         }
 
         const translated = translatedTexts[translatedIndex++];
-        if (translated === undefined) {
+        // Missing or empty: the translation failed (sources return ''); show the source line.
+        if (translated === undefined || !translated.trim()) {
             outputLines.push(meta.raw);
             continue;
         }
@@ -944,7 +956,10 @@ function buildProgressiveSnapshot(
 
         const translated = translatedTexts[translatedIndex++];
 
-        if (translated !== null) {
+        if (translated !== null && !translated.trim()) {
+            // The translation failed (sources return ''): show the source line, no loading indicator
+            outputLines.push(meta.raw);
+        } else if (translated !== null) {
             // Already translated – reconstruct the line
             if (meta.prefix === '\x00TABLE_ROW\x00') {
                 const cellSegs = tableRowCellSegments.get(meta.lineIndex);
@@ -1089,8 +1104,11 @@ export async function translateMarkdownDocumentProgressive(
 function buildResultsMap(sourceTexts: string[], translatedTexts: string[]): Map<string, string> {
     const map = new Map<string, string>();
     for (let i = 0; i < sourceTexts.length; i++) {
-        if (translatedTexts[i] !== undefined) {
-            map.set(sourceTexts[i], translatedTexts[i]);
+        const translated = translatedTexts[i];
+        // An empty line means that piece failed (source lines are never blank); leave the entry
+        // out so the next run translates it again instead of reusing the failure.
+        if (translated !== undefined && !translated.split('\n').some(line => !line.trim())) {
+            map.set(sourceTexts[i], translated);
         }
     }
     return map;

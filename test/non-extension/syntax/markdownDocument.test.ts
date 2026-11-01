@@ -1406,3 +1406,54 @@ describe("translation with a different line count", () => {
         expect(translate).toHaveBeenCalledTimes(1);
     });
 });
+
+// ── A failed translation ('' from the source) keeps the source text ───────
+
+describe("failed translation", () => {
+    const source = "# Title\n\nSet `reg` to `1` now\n\n| A | B |\n|---|---|\n| Set `x` here | Last |";
+
+    it("shows the source text instead of empty lines", async () => {
+        expect(await translateMarkdownDocument(source, async () => "")).toBe(source);
+    });
+
+    it("keeps the source text of a single piece that came back empty", async () => {
+        // One line per line sent, but the middle piece is empty.
+        const translate = async (text: string): Promise<string> =>
+            text.split("\n").map((line) => (line === " to " ? "" : line.toUpperCase())).join("\n");
+        expect(await translateMarkdownDocument("Set `reg` to `1` now", translate)).toBe("SET `reg` to `1` NOW");
+    });
+
+    it("is not stored as a previous result, so the next run tries again", async () => {
+        const first = await translateMarkdownDocumentProgressive(source, async () => "", () => undefined);
+        expect(first.translated).toBe(source);
+        expect(first.resultsMap.size).toBe(0);
+
+        const retry = jest.fn(async (text: string) => text.toUpperCase());
+        const second = await translateMarkdownDocumentProgressive(source, retry, () => undefined, 5, first.resultsMap);
+        expect(retry).toHaveBeenCalled();
+        expect(second.translated.split("\n")[0]).toBe("# TITLE");
+    });
+
+    it("does not store an entry with an empty piece either", async () => {
+        const translate = async (text: string): Promise<string> =>
+            text.split("\n").map((line) => (line === " to " ? "" : line.toUpperCase())).join("\n");
+        const { resultsMap } = await translateMarkdownDocumentProgressive("Set `reg` to `1` now\n\nDone", translate, () => undefined);
+        expect([...resultsMap.keys()]).toEqual(["Done"]);
+    });
+});
+
+// ── Inline code inside link text stays as it is ──────────────────────────
+
+describe("link text with inline code or emphasis", () => {
+    const wrap = async (text: string): Promise<string> =>
+        text.split("\n").map((line) => `<${line}>`).join("\n");
+
+    it.each([
+        ["only a code span", "[`TODOS-wakeup.md`](TODOS-wakeup.md) and more", "[`TODOS-wakeup.md`](TODOS-wakeup.md)< and more>"],
+        ["text around a code span", "Read [the `x` notes](u) now", "<Read >[<the >`x`< notes>](u)< now>"],
+        ["bold inside the link", "See [**bold** text](u)", "<See >[**<bold>**< text>](u)"],
+        ["plain link text", "See [docs](u) here", "<See >[<docs>](u)< here>"],
+    ])("keeps the code and markers verbatim: %s", async (_name, source, expected) => {
+        expect(await translateMarkdownDocument(source, wrap)).toBe(expected);
+    });
+});
