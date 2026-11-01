@@ -61,16 +61,20 @@ async function commentProvideHover(
         }
 
         if (!block && document.languageId === "markdown") {
-            let { translatedText, range: MarkdwonRange } = await compileMarkdown(document, position);
-            res = createHoverMarkdownString(
-                translatedText,
-                '',
-                uri,
-                MarkdwonRange,
-                document,
-                ''
-            );
-            range = MarkdwonRange;
+            let { translatedText, range: MarkdwonRange, hasTranslated } = await compileMarkdown(document, position);
+            // Nothing translated (failed request, or the line is already in the target language):
+            // no hover, like the hover-content and diagnostics paths.
+            if (hasTranslated) {
+                res = createHoverMarkdownString(
+                    translatedText,
+                    '',
+                    uri,
+                    MarkdwonRange,
+                    document,
+                    ''
+                );
+                range = MarkdwonRange;
+            }
         }
     }
 

@@ -241,11 +241,13 @@ function parseInlineSegments(content: string): InlineSegment[] {
                             segments.push({ raw: '[', translatable: false });
                             // Code spans, HTML and emphasis markers inside the link text stay
                             // verbatim, like outside a link. Walk the link's own tokens only when
-                            // they hold such a token and add up to the text exactly; plain text
-                            // (escapes included) stays one piece.
+                            // they hold such a token, add up to the text exactly and hold no
+                            // backslash escape (a lone `\|` piece could come back without its
+                            // backslash and split a table cell); otherwise the text stays one piece.
                             const inner = linkToken.tokens ?? [];
                             const hasMarkup = inner.some((t: marked.Token) => t.type !== 'text' && t.type !== 'escape');
-                            if (hasMarkup && inner.map((t: marked.Token) => t.raw).join('') === linkText) {
+                            const hasEscape = inner.some((t: marked.Token) => t.type === 'escape');
+                            if (hasMarkup && !hasEscape && inner.map((t: marked.Token) => t.raw).join('') === linkText) {
                                 walkInlineTokens(inner);
                             } else {
                                 segments.push({ raw: linkText, translatable: true });

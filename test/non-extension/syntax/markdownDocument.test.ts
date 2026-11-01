@@ -1453,6 +1453,7 @@ describe("link text with inline code or emphasis", () => {
         ["text around a code span", "Read [the `x` notes](u) now", "<Read >[<the >`x`< notes>](u)< now>"],
         ["bold inside the link", "See [**bold** text](u)", "<See >[**<bold>**< text>](u)"],
         ["plain link text", "See [docs](u) here", "<See >[<docs>](u)< here>"],
+        ["markup next to a backslash escape (sent as one piece)", "See [a \\* b `c`](u)", "<See >[<a \\* b `c`>](u)"],
     ])("keeps the code and markers verbatim: %s", async (_name, source, expected) => {
         expect(await translateMarkdownDocument(source, wrap)).toBe(expected);
     });
