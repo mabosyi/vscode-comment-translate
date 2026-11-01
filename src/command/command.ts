@@ -6,12 +6,16 @@ import { addSelection, clipboard, selectLastHover } from "./select";
 import { selectLanguageModel, setDeepLApiKey } from "./sourceSetup";
 import { clearTranslationCache } from "../translate/manager";
 import { commentDecorationManager } from "../languageFeature/decoration";
+import { conciseDecorationManager } from "../languageFeature/concise";
+import { refreshTranslatedMarkdownPreviews } from "../languageFeature/markdownPreview";
 
 async function clearTranslationCacheCommand() {
     const count = await clearTranslationCache();
     // Browse mode reuses decorations for unchanged ranges, so rebuild them to drop the old text.
     commentDecorationManager.resetCommentDecoration();
-    window.showInformationMessage(`Cleared ${count} cached translations. Reopen open Markdown previews to refresh them.`);
+    conciseDecorationManager.clearCache();
+    refreshTranslatedMarkdownPreviews();
+    window.showInformationMessage(`Cleared ${count} cached translations.`);
 }
 
 export function registerCommands(context: ExtensionContext) {
