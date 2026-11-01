@@ -3,6 +3,7 @@ import {
     extractTranslatableTexts,
     reconstructDocument,
     translateMarkdownDocument,
+    translateMarkdownDocumentProgressive,
     stripBoldInitial,
     restoreBoldInitial,
     replaceInlinePlaceholders,
@@ -1279,4 +1280,77 @@ describe("translateMarkdownDocument keeps non-translatable inline parts intact",
         });
     });
 
+});
+
+// ── Table rows: each cell gets back exactly its own pieces ───────────────
+
+describe("table rows with several text pieces in a cell", () => {
+    // Wraps every translated line in <...> so each piece is visible in the output.
+    const wrap = async (text: string): Promise<string> =>
+        text.split("\n").map((line) => `<${line}>`).join("\n");
+    const header = "| A | B | C |\n|---|---|---|\n";
+
+    it.each([
+        ["code spans, then a plain cell", "| Set `reg` to `1` now | Description |", "| <Set >`reg`< to >`1`< now> | <Description> |"],
+        ["a plain cell, then code spans", "| Name | Set `reg` to `1` now |", "| <Name> | <Set >`reg`< to >`1`< now> |"],
+        ["a link inside a cell", "| See [docs](https://x.com) here | Next |", "| <See >[<docs>](https://x.com)< here> | <Next> |"],
+        ["an empty cell in between", "| Set `reg` now | | Last |", "| <Set >`reg`< now> | | <Last> |"],
+        ["a cell with only a code span", "| `reg` | Value |", "| `reg` | <Value> |"],
+        ["an escaped pipe inside a cell", "| a \\| b | c |", "| <a \\| b> | <c> |"],
+    ])("maps the translation back cell by cell: %s", async (_name, row, expected) => {
+        const result = await translateMarkdownDocument(header + row, wrap);
+        expect(result.split("\n")[2]).toBe(expected);
+    });
+
+    it("sends no line for empty cells or cells without text", async () => {
+        const translate = jest.fn(wrap);
+        await translateMarkdownDocument(header + "| Set `reg` now | | `x` |", translate);
+        expect(translate).toHaveBeenCalledWith("A\nB\nC\nSet \n now");
+    });
+});
+
+// ── A source that merges or splits lines must not shift later lines ──────
+
+describe("translation with a different line count", () => {
+    const source = "Alpha one\n\nBravo two\n\nCharlie three";
+    // Merges the first two lines of a multi-line request, as DeepL and Bing sometimes do.
+    const mergeFirstTwo = jest.fn(async (text: string): Promise<string> => {
+        const lines = text.toUpperCase().split("\n");
+        return lines.length < 2 ? lines[0] : [`${lines[0]} ${lines[1]}`, ...lines.slice(2)].join("\n");
+    });
+
+    beforeEach(() => mergeFirstTwo.mockClear());
+
+    it("translates each paragraph again on its own in a one-shot translation", async () => {
+        const lines = (await translateMarkdownDocument(source, mergeFirstTwo)).split("\n");
+        expect([lines[0], lines[2], lines[4]]).toEqual(["ALPHA ONE", "BRAVO TWO", "CHARLIE THREE"]);
+        expect(mergeFirstTwo).toHaveBeenCalledTimes(4); // the batch, then one request per paragraph
+    });
+
+    it("translates each paragraph again on its own in a progressive translation", async () => {
+        const { translated } = await translateMarkdownDocumentProgressive(source, mergeFirstTwo, () => undefined);
+        const lines = translated.split("\n");
+        expect([lines[0], lines[2], lines[4]]).toEqual(["ALPHA ONE", "BRAVO TWO", "CHARLIE THREE"]);
+    });
+
+    it("re-cuts a table row whose own cells were merged without touching other rows", async () => {
+        const table = "| A | B |\n|---|---|\n| Set `reg` now | Next |\n| Done | Last |";
+        const lines = (await translateMarkdownDocument(table, mergeFirstTwo)).split("\n");
+        expect(lines[3]).toBe("| DONE | LAST |");
+        expect(lines[2]).toMatch(/^\| SET .*`reg`.* \| .+ \|$/);
+    });
+
+    it("does not retry a failed (empty) batch entry by entry", async () => {
+        const failing = jest.fn(async () => "");
+        await translateMarkdownDocument(source, failing);
+        expect(failing).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the spaces next to inline code when the pieces are re-cut", async () => {
+        // The translator merges the pieces and drops the spaces around them.
+        const mergeAndTrim = async (text: string): Promise<string> =>
+            text.split("\n").map((line) => line.trim().toUpperCase()).join(" ");
+        const result = await translateMarkdownDocument("Set `reg` to `1` now", mergeAndTrim);
+        expect(result).toBe("SET `reg` TO `1` NOW");
+    });
 });

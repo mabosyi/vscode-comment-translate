@@ -13,6 +13,7 @@
  */
 
 import { marked } from "marked";
+import { normalizeTranslatedLines } from "../translate/lineBreakFallback";
 
 // ── Bold initial letter handling ─────────────────────────────────────────
 
@@ -140,6 +141,15 @@ function escapeRegExp(str: string): string {
 function isTableRow(line: string): boolean {
     const trimmed = line.trim();
     return trimmed.startsWith('|') && trimmed.endsWith('|') && !TABLE_SEPARATOR_RE.test(line);
+}
+
+/**
+ * Cells of a trimmed table row with outer pipes. Splits only at pipes that are not escaped
+ * (`\|` is a literal pipe inside a GFM cell), then drops the empty pieces outside the outer pipes.
+ * ponytail: `\\|` (an escaped backslash before a delimiter) is read as an escaped pipe; rare in practice.
+ */
+function splitTableCells(trimmedRow: string): string[] {
+    return trimmedRow.split(/(?<!\\)\|/).slice(1, -1);
 }
 
 function makeNonTranslatable(lineIndex: number, raw: string): LineMeta {
@@ -370,38 +380,36 @@ function reconstructInlineContent(
 
 // ── Table row handling ───────────────────────────────────────────────────
 
+/** How one table cell was split for translation. */
+interface TableCellSegments {
+    segments: InlineSegment[];
+    /** Cell content without its padding */
+    originalContent: string;
+    /** Lines this cell contributes to the row's request (0 for empty cells and cells without text) */
+    lineCount: number;
+}
+
 /**
- * Parse a table row. Each cell is independently analyzed for translatable text.
- * The translatable texts from all cells are joined with \n for batch translation.
+ * Parse a table row. Each cell is analysed on its own. A cell with text contributes one line
+ * per translatable piece (a cell such as "Set `reg` now" has two), an empty cell or a cell
+ * without text contributes none; all lines of the row are joined with \n for batch translation.
+ * `lineCount` records each cell's share so the translation can be handed back cell by cell.
  */
-function parseTableRow(raw: string, lineIndex: number): LineMeta & { cellSegments: { segments: InlineSegment[]; originalContent: string }[] } {
-    const trimmed = raw.trim();
-    const cells = trimmed.split('|').slice(1, -1);
+function parseTableRow(raw: string, lineIndex: number): LineMeta & { cellSegments: TableCellSegments[] } {
+    const cellSegments: TableCellSegments[] = [];
+    const lines: string[] = [];
 
-    const cellSegments: { segments: InlineSegment[]; originalContent: string }[] = [];
-    const translatableTexts: string[] = [];
-    let hasAnyTranslatable = false;
-
-    for (const cell of cells) {
+    for (const cell of splitTableCells(raw.trim())) {
         const cellContent = cell.trim();
-        if (!cellContent) {
-            cellSegments.push({ segments: [], originalContent: cellContent });
-            translatableTexts.push('');
-            continue;
-        }
-
-        const { textToTranslate, segments, hasTranslatable } = extractInlineTranslatableText(cellContent);
-        cellSegments.push({ segments, originalContent: cellContent });
-
-        if (hasTranslatable) {
-            hasAnyTranslatable = true;
-            translatableTexts.push(textToTranslate);
-        } else {
-            translatableTexts.push('');
-        }
+        const { textToTranslate, segments, hasTranslatable } = cellContent
+            ? extractInlineTranslatableText(cellContent)
+            : { textToTranslate: '', segments: [], hasTranslatable: false };
+        const cellLines = hasTranslatable ? textToTranslate.split('\n') : [];
+        cellSegments.push({ segments, originalContent: cellContent, lineCount: cellLines.length });
+        lines.push(...cellLines);
     }
 
-    if (!hasAnyTranslatable) {
+    if (lines.length === 0) {
         return {
             ...makeNonTranslatable(lineIndex, raw),
             cellSegments,
@@ -412,7 +420,7 @@ function parseTableRow(raw: string, lineIndex: number): LineMeta & { cellSegment
         lineIndex,
         translatable: true,
         raw,
-        textToTranslate: translatableTexts.join('\n'),
+        textToTranslate: lines.join('\n'),
         prefix: '\x00TABLE_ROW\x00',
         suffix: '',
         cellSegments,
@@ -420,28 +428,25 @@ function parseTableRow(raw: string, lineIndex: number): LineMeta & { cellSegment
 }
 
 /**
- * Reconstruct a table row by replacing translatable cell content.
+ * Reconstruct a table row. Each cell takes the next `lineCount` lines of the translation, in
+ * order, and rebuilds its content around the parts that were not translated. A cell whose lines
+ * are all empty keeps its original text.
  */
 function reconstructTableRow(
     raw: string,
     translatedText: string,
-    cellSegments: { segments: InlineSegment[]; originalContent: string }[]
+    cellSegments: TableCellSegments[]
 ): string {
-    const translatedCells = translatedText.split('\n');
-    const trimmed = raw.trim();
-    const originalCells = trimmed.split('|').slice(1, -1);
+    const translatedLines = translatedText.split('\n');
+    let offset = 0;
 
-    const reconstructedCells = originalCells.map((originalCell, cellIndex) => {
-        const cellContent = originalCell.trim();
-        const translatedCellText = cellIndex < translatedCells.length ? translatedCells[cellIndex] : '';
-        const cellInfo = cellIndex < cellSegments.length ? cellSegments[cellIndex] : null;
+    const reconstructedCells = splitTableCells(raw.trim()).map((originalCell, cellIndex) => {
+        const cellInfo = cellSegments[cellIndex];
+        const count = cellInfo?.lineCount ?? 0;
+        const translatedParts = translatedLines.slice(offset, offset + count);
+        offset += count;
 
-        if (!cellContent || !translatedCellText.trim() || !cellInfo) {
-            return originalCell;
-        }
-
-        const hasTranslatable = cellInfo.segments.some(seg => seg.translatable);
-        if (!hasTranslatable) {
+        if (!cellInfo || count === 0 || translatedParts.every(part => !part.trim())) {
             return originalCell;
         }
 
@@ -449,8 +454,6 @@ function reconstructTableRow(
         const leadingSpace = originalCell.match(/^(\s*)/)?.[1] || ' ';
         const trailingSpace = originalCell.match(/(\s*)$/)?.[1] || ' ';
 
-        // Reconstruct cell content by replacing translatable segments
-        const translatedParts = translatedCellText.split('\n');
         const reconstructedContent = reconstructInlineContent(
             cellInfo.originalContent,
             cellInfo.segments,
@@ -467,7 +470,7 @@ function reconstructTableRow(
 // ── Line-level parsing ───────────────────────────────────────────────────
 
 // Store table cell segments alongside LineMeta for reconstruction
-const tableRowCellSegments = new Map<number, { segments: InlineSegment[]; originalContent: string }[]>();
+const tableRowCellSegments = new Map<number, TableCellSegments[]>();
 // Store inline segments for regular lines
 const lineInlineSegments = new Map<number, InlineSegment[]>();
 
@@ -689,25 +692,11 @@ export function reconstructDocument(lineMetas: LineMeta[], translatedTexts: stri
             continue;
         }
 
-        // Handle table rows
+        // Handle table rows (without its cell layout a row cannot be mapped back; keep it as is,
+        // like buildProgressiveSnapshot does)
         if (meta.prefix === '\x00TABLE_ROW\x00') {
             const cellSegs = tableRowCellSegments.get(meta.lineIndex);
-            if (cellSegs) {
-                outputLines.push(reconstructTableRow(meta.raw, translated, cellSegs));
-            } else {
-                // Fallback: simple cell replacement
-                const translatedCells = translated.split('\n');
-                const trimmed = meta.raw.trim();
-                const originalCells = trimmed.split('|').slice(1, -1);
-                const reconstructedCells = originalCells.map((originalCell, cellIndex) => {
-                    const originalPadding = originalCell.match(/^(\s*)/)?.[1] || ' ';
-                    const originalTrailing = originalCell.match(/(\s*)$/)?.[1] || ' ';
-                    const translatedCell = cellIndex < translatedCells.length ? translatedCells[cellIndex] : originalCell.trim();
-                    return `${originalPadding}${translatedCell}${originalTrailing}`;
-                });
-                const leadingWhitespace = meta.raw.match(/^(\s*)/)?.[1] || '';
-                outputLines.push(`${leadingWhitespace}|${reconstructedCells.join('|')}|`);
-            }
+            outputLines.push(cellSegs ? reconstructTableRow(meta.raw, translated, cellSegs) : meta.raw);
             continue;
         }
 
@@ -758,11 +747,78 @@ export function reconstructDocument(lineMetas: LineMeta[], translatedTexts: stri
 }
 
 /**
+ * True when the source returned one line per line it was sent (a trailing newline is ignored).
+ * Same test normalizeTranslatedLines uses to keep lines as returned; batch lines are never blank,
+ * so its blank-line rules do not apply here.
+ */
+function keepsLineCount(sourceText: string, translatedText: string): boolean {
+    const lineCount = sourceText.split('\n').length;
+    return [translatedText.replace(/\s+$/, ''), translatedText]
+        .some(text => text.replace(/\r\n?/g, '\n').split('\n').length === lineCount);
+}
+
+/**
+ * Map a translation back onto the lines that were sent: always one entry per source line.
+ * Lines the source returned one for one are left exactly as returned. Otherwise the lines are
+ * re-cut by normalizeTranslatedLines; re-cut pieces lose their edge spaces, which separate text
+ * from inline code (`ID `x` to`), so a missing leading or trailing space is copied back from
+ * the source line.
+ */
+function alignTranslatedLines(sourceText: string, translatedText: string): string[] {
+    const sourceLines = sourceText.split('\n');
+    const aligned = normalizeTranslatedLines(sourceLines, translatedText);
+    if (keepsLineCount(sourceText, translatedText)) {
+        return aligned;
+    }
+    return aligned.map((line, i) => {
+        if (!line) {
+            return line;
+        }
+        const leading = /^\s/.test(line) ? '' : sourceLines[i].match(/^\s*/)![0];
+        const trailing = /\s$/.test(line) ? '' : sourceLines[i].match(/\s*$/)![0];
+        return leading + line + trailing;
+    });
+}
+
+/**
+ * Translate several entries (each may span lines, e.g. a table row) in one request and return
+ * one translation per entry. Sources sometimes merge or split lines (13 of 194 multi-line
+ * requests in the user's logs, 2026-10-27 to 30, mostly merges around inline code). Where that
+ * happened is unknown, and padding or cutting the result would give every later entry its
+ * neighbour's text, so each entry is translated again on its own; a mismatch inside one entry is
+ * then re-cut by alignTranslatedLines and stays inside that entry.
+ * An empty result means the request failed; it is not retried per entry, which would multiply
+ * requests against a source that is rate limiting.
+ * Cost: up to one extra request per entry, only for batches that came back misaligned.
+ */
+async function translateEntries(
+    entries: string[],
+    translateFn: (text: string) => Promise<string>
+): Promise<string[]> {
+    const joined = entries.join('\n');
+    const translated = await translateFn(joined);
+    if (entries.length > 1 && translated.trim() && !keepsLineCount(joined, translated)) {
+        return Promise.all(entries.map(async entry =>
+            alignTranslatedLines(entry, await translateFn(entry)).join('\n')));
+    }
+
+    const lines = alignTranslatedLines(joined, translated);
+    let offset = 0;
+    return entries.map(entry => {
+        const count = entry.split('\n').length;
+        const chunk = lines.slice(offset, offset + count).join('\n');
+        offset += count;
+        return chunk;
+    });
+}
+
+/**
  * High-level function: translate a full markdown document.
  *
  * @param source The raw markdown source text
  * @param translateFn A function that translates a multi-line string and returns
- *                    the translated string with the same number of lines.
+ *                    the translated string, ideally with the same number of lines
+ *                    (a different count is re-aligned by alignTranslatedLines).
  * @returns The translated markdown document with identical line count and formatting.
  */
 export async function translateMarkdownDocument(
@@ -776,33 +832,9 @@ export async function translateMarkdownDocument(
         return source;
     }
 
-    // Each translatable text may contain \n (e.g. table rows with multiple cells).
-    // Record how many lines each entry occupies so we can correctly slice the
-    // translated result back into per-entry chunks.
-    const lineCounts = translatableTexts.map(text => text.split('\n').length);
-    const totalLines = lineCounts.reduce((sum, count) => sum + count, 0);
-
-    const joinedText = translatableTexts.join('\n');
-    const translatedJoined = await translateFn(joinedText);
-    let allTranslatedLines = translatedJoined.split('\n');
-
-    // Pad or trim to match expected total line count
-    while (allTranslatedLines.length < totalLines) {
-        allTranslatedLines.push('');
-    }
-    if (allTranslatedLines.length > totalLines) {
-        allTranslatedLines = allTranslatedLines.slice(0, totalLines);
-    }
-
-    // Slice translated lines back into per-entry chunks, re-joining with \n
-    const translatedTexts: string[] = [];
-    let offset = 0;
-    for (const count of lineCounts) {
-        const chunk = allTranslatedLines.slice(offset, offset + count);
-        translatedTexts.push(chunk.join('\n'));
-        offset += count;
-    }
-
+    // Each translatable text may contain \n (e.g. table rows with multiple cells);
+    // translateEntries hands back one translation per entry.
+    const translatedTexts = await translateEntries(translatableTexts, translateFn);
     return reconstructDocument(lineMetas, translatedTexts);
 }
 
@@ -964,9 +996,6 @@ export async function translateMarkdownDocumentProgressive(
         return { translated: source, resultsMap: new Map() };
     }
 
-    // Each translatable text may span multiple lines (table rows with cells).
-    const lineCounts = translatableTexts.map(text => text.split('\n').length);
-
     // Track per-entry translation results; null = not yet translated
     const translatedTexts: (string | null)[] = new Array(translatableTexts.length).fill(null);
 
@@ -1004,30 +1033,10 @@ export async function translateMarkdownDocumentProgressive(
     for (let batchOffset = 0; batchOffset < indicesToTranslate.length; batchOffset += batchSize) {
         const batchIndices = indicesToTranslate.slice(batchOffset, batchOffset + batchSize);
         const batchTexts = batchIndices.map(i => translatableTexts[i]);
-        const batchLineCounts = batchIndices.map(i => lineCounts[i]);
-        const batchTotalLines = batchLineCounts.reduce((sum, count) => sum + count, 0);
-
-        const joinedBatch = batchTexts.join('\n');
-        const translatedJoined = await translateFn(joinedBatch);
-        let allTranslatedLines = translatedJoined.split('\n');
-
-        // Pad or trim to match expected line count
-        while (allTranslatedLines.length < batchTotalLines) {
-            allTranslatedLines.push('');
-        }
-        if (allTranslatedLines.length > batchTotalLines) {
-            allTranslatedLines = allTranslatedLines.slice(0, batchTotalLines);
-        }
-
-        // Distribute translated lines back to per-entry chunks
-        let offset = 0;
-        for (let j = 0; j < batchIndices.length; j++) {
-            const entryIndex = batchIndices[j];
-            const count = lineCounts[entryIndex];
-            const chunk = allTranslatedLines.slice(offset, offset + count);
-            translatedTexts[entryIndex] = chunk.join('\n');
-            offset += count;
-        }
+        const batchResults = await translateEntries(batchTexts, translateFn);
+        batchIndices.forEach((entryIndex, j) => {
+            translatedTexts[entryIndex] = batchResults[j];
+        });
 
         // Emit progress snapshot after each batch
         onProgress(buildProgressiveSnapshot(lineMetas, translatedTexts));
