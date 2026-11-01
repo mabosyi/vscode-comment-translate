@@ -1367,11 +1367,42 @@ describe("translation with a different line count", () => {
         expect(failing).toHaveBeenCalledTimes(1);
     });
 
-    it("keeps the spaces next to inline code when the pieces are re-cut", async () => {
+    it("translates a single misaligned entry line by line and keeps the spaces next to inline code", async () => {
         // The translator merges the pieces and drops the spaces around them.
-        const mergeAndTrim = async (text: string): Promise<string> =>
-            text.split("\n").map((line) => line.trim().toUpperCase()).join(" ");
+        const mergeAndTrim = jest.fn(async (text: string): Promise<string> =>
+            text.split("\n").map((line) => line.trim().toUpperCase()).join(" "));
         const result = await translateMarkdownDocument("Set `reg` to `1` now", mergeAndTrim);
         expect(result).toBe("SET `reg` TO `1` NOW");
+        expect(mergeAndTrim).toHaveBeenCalledTimes(4); // the entry, then one request per piece
+    });
+
+    describe("a table row that is the only entry of its request", () => {
+        const dictionary: Record<string, string> = {
+            "Set": "Atur", "to": "ke", "now": "sekarang", "Description of the register": "Deskripsi dari register",
+            "A": "A", "B": "B", "Done": "Selesai", "Last": "Terakhir",
+        };
+        // Merges every multi-line request into one line; translates single lines word for word and
+        // returns them trimmed, as a source may do with a short fragment.
+        const translate = jest.fn(async (text: string): Promise<string> =>
+            text.split("\n").map((line) => dictionary[line.trim()] ?? line.trim()).join(" "));
+        const row = "| Set `reg` to `1` now | Description of the register |";
+        const expected = "| Atur `reg` ke `1` sekarang | Deskripsi dari register |";
+
+        it("in a one-shot translation", async () => {
+            expect(await translateMarkdownDocument(row, translate)).toBe(expected);
+        });
+
+        it("in a progressive translation where the other rows come from previous results", async () => {
+            const table = `| A | B |\n|---|---|\n${row}\n| Done | Last |`;
+            const previous = new Map([["A\nB", "A\nB"], ["Done\nLast", "Selesai\nTerakhir"]]);
+            const { translated } = await translateMarkdownDocumentProgressive(table, translate, () => undefined, 5, previous);
+            expect(translated.split("\n")[2]).toBe(expected);
+        });
+    });
+
+    it("ignores whitespace-only lines at the end of an otherwise one-for-one result", async () => {
+        const translate = jest.fn(async (): Promise<string> => "ALPHA\nBRAVO\n \n");
+        expect(await translateMarkdownDocument("Alpha\n\nBravo", translate)).toBe("ALPHA\n\nBRAVO");
+        expect(translate).toHaveBeenCalledTimes(1);
     });
 });

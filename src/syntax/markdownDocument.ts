@@ -750,11 +750,12 @@ export function reconstructDocument(lineMetas: LineMeta[], translatedTexts: stri
 
 /**
  * The translated lines exactly as returned, when the source returned one line per line it was
- * sent (trailing line breaks are ignored, trailing spaces are kept); otherwise undefined.
+ * sent (trailing line breaks and whitespace-only trailing lines are ignored; trailing spaces on
+ * the last line are kept); otherwise undefined.
  */
 function linesAsReturned(lineCount: number, translatedText: string): string[] | undefined {
     const normalized = translatedText.replace(/\r\n?/g, '\n');
-    for (const text of [normalized, normalized.replace(/\n+$/, '')]) {
+    for (const text of [normalized, normalized.replace(/(\n[ \t]*)+$/, '')]) {
         const lines = text.split('\n');
         if (lines.length === lineCount) {
             return lines;
@@ -764,11 +765,23 @@ function linesAsReturned(lineCount: number, translatedText: string): string[] | 
 }
 
 /**
+ * Copies the leading or trailing whitespace of the source line onto a translated piece that has
+ * none there. The spaces around a piece separate it from inline code (`ID `x` to`), and they are
+ * lost when a piece is re-cut or translated on its own.
+ */
+function keepEdgeSpaces(sourceLine: string, line: string): string {
+    if (!line) {
+        return line;
+    }
+    const leading = /^\s/.test(line) ? '' : sourceLine.match(/^\s*/)![0];
+    const trailing = /\s$/.test(line) ? '' : sourceLine.match(/\s*$/)![0];
+    return leading + line + trailing;
+}
+
+/**
  * Map a translation back onto the lines that were sent: always one entry per source line.
  * Lines the source returned one for one are kept exactly as returned. Otherwise the text is
- * re-cut by normalizeTranslatedLines; re-cut pieces lose their edge spaces, which separate text
- * from inline code (`ID `x` to`), so a missing leading or trailing space is copied back from
- * the source line.
+ * re-cut by normalizeTranslatedLines, and the re-cut pieces get their edge spaces back.
  */
 function alignTranslatedLines(sourceText: string, translatedText: string): string[] {
     const sourceLines = sourceText.split('\n');
@@ -776,14 +789,8 @@ function alignTranslatedLines(sourceText: string, translatedText: string): strin
     if (asReturned) {
         return asReturned;
     }
-    return normalizeTranslatedLines(sourceLines, translatedText).map((line, i) => {
-        if (!line) {
-            return line;
-        }
-        const leading = /^\s/.test(line) ? '' : sourceLines[i].match(/^\s*/)![0];
-        const trailing = /\s$/.test(line) ? '' : sourceLines[i].match(/\s*$/)![0];
-        return leading + line + trailing;
-    });
+    return normalizeTranslatedLines(sourceLines, translatedText)
+        .map((line, i) => keepEdgeSpaces(sourceLines[i], line));
 }
 
 /**
@@ -791,14 +798,18 @@ function alignTranslatedLines(sourceText: string, translatedText: string): strin
  * translation per piece. Sources sometimes merge or split lines: 13 of 194 multi-line requests
  * in the user's logs (2026-10-27 to 30, comments and previews together) came back with a
  * different line count, 12 of them with fewer lines. Where that happened is unknown, and padding
- * or cutting the result would give every later piece its neighbour's text, so each piece is
- * translated again on its own. A piece that spans lines and still comes back misaligned is split
- * once more, line by line, so no text moves into a neighbouring line or table cell; only a single
- * line that comes back as several is joined again (alignTranslatedLines).
+ * or cutting the result would give every later piece its neighbour's text, so:
+ *  - several pieces: each piece is translated again on its own;
+ *  - a piece that spans lines (also when it is the only one) and is misaligned: it is split line
+ *    by line and each line is translated on its own, so no text moves into a neighbouring line
+ *    or table cell. Those single lines get their edge spaces back.
+ * Only a single line that comes back as several is joined again (alignTranslatedLines).
  * An empty result means the request failed; it is not retried, which would multiply requests
  * against a source that is rate limiting. A merge and a split that cancel out are not detected.
- * Cost: extra requests only for results that came back misaligned, at most one per piece plus
- * one per line of each piece that is misaligned again.
+ * Cost: extra requests only for results that came back misaligned, at most one per piece plus one
+ * per line of each multi-line piece that is misaligned again.
+ * ponytail: a batch of 5 three-line rows that every request merges takes 21 requests (1 + 5 + 15),
+ * queued behind DeepL's two request slots; batch the retries if 429s show up in the logs.
  *
  * @param translated The result for the joined pieces when the caller already has it.
  */
@@ -809,12 +820,19 @@ async function translatePieces(
 ): Promise<string[]> {
     const joined = pieces.join('\n');
     const result = translated ?? await translateFn(joined);
-    if (pieces.length > 1 && result.trim() && !linesAsReturned(joined.split('\n').length, result)) {
+    const misaligned = joined.includes('\n') && result.trim() !== ''
+        && !linesAsReturned(joined.split('\n').length, result);
+
+    if (misaligned && pieces.length === 1) {
+        // One piece spanning lines: split it line by line (its own result is already known).
+        return [(await translatePieces(joined.split('\n'), translateFn, result)).join('\n')];
+    }
+    if (misaligned) {
         return Promise.all(pieces.map(async piece => {
             const pieceResult = await translateFn(piece);
             return piece.includes('\n')
                 ? (await translatePieces(piece.split('\n'), translateFn, pieceResult)).join('\n')
-                : alignTranslatedLines(piece, pieceResult).join('\n');
+                : keepEdgeSpaces(piece, alignTranslatedLines(piece, pieceResult)[0]);
         }));
     }
 
