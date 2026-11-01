@@ -27,7 +27,8 @@ jest.mock('../../../src/translate/DeepLTranslate', () => ({ DeepLTranslate: clas
 
 import { ExtensionContext } from 'vscode';
 import * as configuration from '../../../src/configuration';
-import { cachedTranslate, clearTranslationCache, getFallbackSources, initTranslate, translateManager } from '../../../src/translate/manager';
+import * as lang from '../../../src/lang';
+import { autoMutualTranslate, cachedTranslate, clearTranslationCache, getFallbackSources, initTranslate, translateManager } from '../../../src/translate/manager';
 
 describe('cachedTranslate', () => {
     let translate: jest.Mock;
@@ -52,6 +53,47 @@ describe('cachedTranslate', () => {
         expect(translate).not.toHaveBeenCalled();
     });
 
+    describe('same-language skip threshold', () => {
+        let detect: jest.SpyInstance;
+
+        beforeEach(() => {
+            detect = jest.spyOn(lang, 'detectLanguage');
+        });
+        afterEach(() => detect.mockRestore());
+
+        test('sends short non-CJK text without running detection', async () => {
+            detect.mockResolvedValue('id');
+            translate.mockResolvedValueOnce('Loop utama');
+
+            expect(await cachedTranslate('Main  loop', { to: 'id' })).toBe('Loop utama');
+            expect(translate).toHaveBeenCalledTimes(1);
+            expect(detect).not.toHaveBeenCalled();
+        });
+
+        test('skips text of 30 characters or more detected as the target', async () => {
+            const text = 'Set the baud rate of the port!'; // exactly 30
+            detect.mockResolvedValue('id');
+
+            expect(await cachedTranslate(text, { to: 'id' })).toBe(text);
+            expect(translate).not.toHaveBeenCalled();
+        });
+
+        test('measures length after collapsing whitespace', async () => {
+            detect.mockResolvedValue('id');
+            translate.mockResolvedValueOnce('x');
+
+            await cachedTranslate('  a   b   c   d   e   f   g   h   i   j  k  l', { to: 'id' });
+            expect(translate).toHaveBeenCalledTimes(1);
+        });
+
+        test('skips short CJK text detected as the target', async () => {
+            detect.mockResolvedValue('zh');
+
+            expect(await cachedTranslate('使能中断', { to: 'zh-CN' })).toBe('使能中断');
+            expect(translate).not.toHaveBeenCalled();
+        });
+    });
+
     test('does not memoize a failed (empty) translation', async () => {
         translate
             .mockResolvedValueOnce('')
@@ -60,6 +102,42 @@ describe('cachedTranslate', () => {
         expect(await cachedTranslate('清除挂起标志位')).toBe('');
         expect(await cachedTranslate('清除挂起标志位')).toBe('Bersihkan flag tertunda');
         expect(translate).toHaveBeenCalledTimes(2);
+    });
+});
+
+// With mutualTranslate on, text already in the target language is translated back to the
+// source language. A misread on short Latin text must not flip the direction.
+describe('autoMutualTranslate', () => {
+    let translate: jest.Mock;
+    let detect: jest.SpyInstance;
+    let config: jest.SpyInstance;
+
+    beforeEach(() => {
+        initTranslate({ workspaceState: {} } as unknown as ExtensionContext);
+        translate = translateManager.translate as jest.Mock;
+        detect = jest.spyOn(lang, 'detectLanguage').mockResolvedValue('id');
+        config = jest.spyOn(configuration, 'getConfig')
+            .mockImplementation(((key: string, defaultValue: unknown) => key === 'mutualTranslate' ? true : defaultValue) as typeof configuration.getConfig);
+    });
+    afterEach(() => {
+        detect.mockRestore();
+        config.mockRestore();
+    });
+
+    test('keeps the target for short Latin text misread as the target language', async () => {
+        translate.mockResolvedValueOnce('Loop utama');
+
+        expect(await autoMutualTranslate('Main loop')).toBe('Loop utama');
+        expect(translate).toHaveBeenCalledWith('Main loop', expect.objectContaining({ to: 'id' }));
+        expect(detect).not.toHaveBeenCalled();
+    });
+
+    test('swaps to the source language for long text detected as the target language', async () => {
+        const indonesian = 'Aktifkan interupsi timer sebelum masuk mode tidur';
+        translate.mockResolvedValueOnce('Enable the timer interrupt before entering sleep mode');
+
+        await autoMutualTranslate(indonesian);
+        expect(translate).toHaveBeenCalledWith(indonesian, expect.objectContaining({ to: 'en' }));
     });
 });
 

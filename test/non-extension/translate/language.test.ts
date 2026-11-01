@@ -8,6 +8,11 @@ describe('isSameLanguage', () => {
         expect(isSameLanguage('en', 'en')).toBe(true);
     });
 
+    test('matches only the same code or a base code before a dash', () => {
+        expect(isSameLanguage('zh', 'zh-TW')).toBe(true);
+        expect(isSameLanguage('ha', 'haw')).toBe(false);
+    });
+
     test('treats Malay as Indonesian for an Indonesian target', () => {
         expect(isSameLanguage('id', 'id')).toBe(true);
         expect(isSameLanguage('ms', 'id')).toBe(true);
