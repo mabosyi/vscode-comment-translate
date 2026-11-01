@@ -1458,3 +1458,23 @@ describe("link text with inline code or emphasis", () => {
         expect(await translateMarkdownDocument(source, wrap)).toBe(expected);
     });
 });
+
+// ── Links, code and HTML inside bold or italic text stay as they are ─────
+
+describe("markup inside bold or italic text", () => {
+    const wrap = async (text: string): Promise<string> =>
+        text.split("\n").map((line) => `<${line}>`).join("\n");
+
+    it.each([
+        ["a link inside bold", "Read **see [docs](https://x.com) now** today", "<Read >**<see >[<docs>](https://x.com)< now>**< today>"],
+        ["a link inside italic", "*see [docs](u)*", "*<see >[<docs>](u)*"],
+        ["a code span inside bold", "**Use `x` here**", "**<Use >`x`< here>**"],
+        ["bold whose only content is a link", "**[docs](u)**", "**[<docs>](u)**"],
+        ["a link inside bold in a table cell", "| A | B |\n|---|---|\n| **see [d](u)** | x |", "| A | B |\n|---|---|\n| **<see >[<d>](u)** | <x> |"],
+        ["plain bold text (unchanged)", "**Bold** text", "**<Bold>**< text>"],
+        ["markup next to a backslash escape (sent as one piece)", "**a \\* b `c`**", "**<a \\* b `c`>**"],
+    ])("keeps the URL, code and markers verbatim: %s", async (_name, source, expected) => {
+        const result = await translateMarkdownDocument(source, wrap);
+        expect(result.split("\n").slice(-1)[0]).toBe(expected.split("\n").slice(-1)[0]);
+    });
+});

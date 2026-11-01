@@ -194,6 +194,26 @@ function parseInlineSegments(content: string): InlineSegment[] {
 
     const segments: InlineSegment[] = [];
 
+    /** True when the tokens hold markup that must stay verbatim (anything but text and escapes). */
+    function hasMarkup(tokenList: marked.Token[]): boolean {
+        return tokenList.some(t => t.type !== 'text' && t.type !== 'escape');
+    }
+
+    /**
+     * Pushes the content of a link or of bold/italic text. Links, code spans, HTML and markers
+     * inside it stay verbatim, like at the top level: its own tokens are walked when they hold
+     * such markup, add up to `text` exactly and hold no backslash escape (a lone `\|` piece could
+     * come back without its backslash and split a table cell). Otherwise `text` is one piece.
+     */
+    function pushInnerContent(tokenList: marked.Token[], text: string) {
+        const hasEscape = tokenList.some(t => t.type === 'escape');
+        if (hasMarkup(tokenList) && !hasEscape && tokenList.map(t => t.raw).join('') === text) {
+            walkInlineTokens(tokenList);
+        } else {
+            segments.push({ raw: text, translatable: true });
+        }
+    }
+
     function walkInlineTokens(tokenList: marked.Token[]) {
         for (const token of tokenList) {
             switch (token.type) {
@@ -239,19 +259,7 @@ function parseInlineSegments(content: string): InlineSegment[] {
                         // inside the title or the URL.
                         if (token.raw.startsWith(linkText + ']', 1)) {
                             segments.push({ raw: '[', translatable: false });
-                            // Code spans, HTML and emphasis markers inside the link text stay
-                            // verbatim, like outside a link. Walk the link's own tokens only when
-                            // they hold such a token, add up to the text exactly and hold no
-                            // backslash escape (a lone `\|` piece could come back without its
-                            // backslash and split a table cell); otherwise the text stays one piece.
-                            const inner = linkToken.tokens ?? [];
-                            const hasMarkup = inner.some((t: marked.Token) => t.type !== 'text' && t.type !== 'escape');
-                            const hasEscape = inner.some((t: marked.Token) => t.type === 'escape');
-                            if (hasMarkup && !hasEscape && inner.map((t: marked.Token) => t.raw).join('') === linkText) {
-                                walkInlineTokens(inner);
-                            } else {
-                                segments.push({ raw: linkText, translatable: true });
-                            }
+                            pushInnerContent(linkToken.tokens ?? [], linkText);
                             segments.push({ raw: token.raw.slice(1 + linkText.length), translatable: false });
                         } else {
                             segments.push({ raw: token.raw, translatable: false });
@@ -270,17 +278,19 @@ function parseInlineSegments(content: string): InlineSegment[] {
                     // the markdown markers (**/**) from being sent to the
                     // translation service, which can corrupt them by inserting
                     // spaces (e.g. "**Causes:**" → "** 原因：**").
+                    // A link, code span or HTML inside is kept verbatim (pushInnerContent), so a
+                    // URL is never sent to the translator and bold text that is only a link
+                    // still gets its link text translated.
                     const formattedToken = token as marked.Tokens.Strong | marked.Tokens.Em;
-                    const marker = token.type === 'strong' ? '**' : '*';
-                    const hasTextContent = formattedToken.tokens &&
-                        formattedToken.tokens.some((t: marked.Token) => t.type === 'text' && t.raw.trim());
-                    if (hasTextContent) {
-                        // Extract inner text (strip the markers)
-                        const innerText = token.raw.slice(marker.length, token.raw.length - marker.length);
-                        // Take the markers verbatim from the source (`_` or `*`).
-                        segments.push({ raw: token.raw.slice(0, marker.length), translatable: false });
-                        segments.push({ raw: innerText, translatable: true });
-                        segments.push({ raw: token.raw.slice(token.raw.length - marker.length), translatable: false });
+                    const markerLength = token.type === 'strong' ? 2 : 1;
+                    const inner = formattedToken.tokens ?? [];
+                    const hasTextContent = inner.some((t: marked.Token) => t.type === 'text' && t.raw.trim());
+                    if (hasTextContent || hasMarkup(inner)) {
+                        // Take the markers verbatim from the source (`**`/`__` or `*`/`_`).
+                        const innerText = token.raw.slice(markerLength, token.raw.length - markerLength);
+                        segments.push({ raw: token.raw.slice(0, markerLength), translatable: false });
+                        pushInnerContent(inner, innerText);
+                        segments.push({ raw: token.raw.slice(token.raw.length - markerLength), translatable: false });
                     } else {
                         segments.push({ raw: token.raw, translatable: false });
                     }
